@@ -98,6 +98,8 @@ its name. This option must not appear in combination with the C<values> option.
 Each value shall be on one line, with no headers, no intervening whitespace no
 comments and no empty lines.
 
+The file is expected to be encoded in UTF-8.
+
 =item range
 
 In case of integer and numeric features, an allowed range can be specified
@@ -153,12 +155,16 @@ in scalar context.
 
 =head2 Creating the features object
 
-Data::FeatureFactory has two methods: C<new> and C<evaluate>. C<new> creates an
+The C<new> method creates an
 object that can then be used to evaluate features. Please do *not* override the
 C<new> method. If you do, then be sure that it calls
 C<Data::FeatureFactory::new> properly. This method accepts an optional
 argument - a hashref with options. Currently, only the 'N/A' option is
 supported. See below for details.
+
+=head2 Getting the list of defined features
+
+The C<names> method returns a list of names of all the features defined.
 
 =head2 Evaluating features
 
@@ -236,7 +242,7 @@ use strict;
 use Carp;
 use File::Basename;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
 
 sub new : method {
@@ -317,7 +323,7 @@ sub new : method {
                 my $ppname;
                 if (defined $package_name and length $package_name > 0) {
                     $package_name =~ s/::$//;
-                    push @INC, $self->{'caller_path'};
+                    local @INC = (@INC, $self->{'caller_path'});
                     undef $@;
                     eval "require $package_name";
                     if ($@) {
@@ -331,11 +337,11 @@ sub new : method {
                 $postprocsub = \&{$ppname};
                 undef $@;
                 eval { $postprocsub->() };
-                if ($@) {
+                if ($@ =~ /^Undefined subroutine/) {
                     croak "Couldn't load postprocessing function '$postproc' ($@)"
                 }
             }
-            elsif ($@) {
+            elsif ($@ =~ /^Undefined subroutine/) {
                 croak "Couldn't load postprocessing function '$postproc' ($@)"
             }
             $feature->{'postproc'} = $postprocsub;
@@ -839,6 +845,11 @@ sub _create_mapping : method {
     else {
         croak "Format '$format' not recognized - please specify 'normal', 'numeric' or 'binary' (should have caught this earlier)"
     }
+}
+
+sub names : method {
+    my ($self) = @_;
+    return map $_->{'name'}, @{ $self->{'features'} }
 }
 
 # to delete

@@ -1,5 +1,10 @@
 Revision history for Data::FeatureFactory
 
+0.03
+        Changes to @INC have been localized.
+        Removed the disruptive use open(:std :utf8) pragma from test script.
+        Added the method "names".
+
 0.02    2008-01-12
         A temp file generated during testing will no longer be installed along
         with the module.

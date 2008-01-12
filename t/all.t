@@ -3,9 +3,8 @@
 use strict;
 use warnings;
 use utf8;
-use open qw(:std :utf8);
 use Carp qw(verbose);
-use Test::More tests => 102;
+use Test::More tests => 103;
 
 my $WARNINGS;
 sub catchwarn {
@@ -60,6 +59,10 @@ sub catchwarn {
 my $funcLoad = FuncLoad->new;
 is(ref($funcLoad), 'FuncLoad', q{instantiated FuncLoad});
 isa_ok($funcLoad, 'Data::FeatureFactory', q{FuncLoad inherited from Data::FeatureFactory});
+
+### retrieving the list of available features
+my @names = $funcLoad->names;
+is(join(' ', @names), 'by_option in_hash in_package', q{retrieved the list of available features});
 
 ### Evaluating features whose code is specified in different manners
 my @by_option = $funcLoad->evaluate([qw(by_option)], 'normal', 1 .. 5);
