@@ -1,5 +1,11 @@
 Revision history for Data::FeatureFactory
 
+0.02    2008-01-12
+        A temp file generated during testing will no longer be installed along
+        with the module.
+        The exception package SoftError has been renamed to
+        Data::FeatureFactory::SoftError to prevent name collision.
+
 0.01    2008-01-11
         First version, released on an unsuspecting world.
 

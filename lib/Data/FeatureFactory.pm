@@ -236,7 +236,7 @@ use strict;
 use Carp;
 use File::Basename;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
 
 sub new : method {
@@ -606,7 +606,7 @@ sub evaluate : method {
             undef $@;
             my @val = eval { _format_value($feature, $normrv, $format, @args) };
             if ($@) {
-                if (ref $@ and $@->isa('SoftError')) {
+                if (ref $@ and $@->isa('Data::FeatureFactory::SoftError')) {
                     warn ${$@};
                     return
                 }
@@ -648,7 +648,7 @@ sub _format_value {
             $normrv = $feature->{'default'};
         }
         else {
-            die SoftError->new("Feature '$name' returned unexpected value '$normrv' on arguments '@args'")
+            die Data::FeatureFactory::SoftError->new("Feature '$name' returned unexpected value '$normrv' on arguments '@args'")
         }
     }
     # check the range for numeric features
@@ -661,7 +661,9 @@ sub _format_value {
                 $normrv = $feature->{'default'};
             }
             else {
-                die SoftError->new("Feature '$name' returned an unexpected value '$normrv' below the left allowed boundary '$$feature{range_l}'")
+                die Data::FeatureFactory::SoftError->new(
+                    "Feature '$name' returned an unexpected value '$normrv' below the left allowed boundary '$$feature{range_l}'"
+                )
             }
         }
         if ($normrv > $feature->{'range_r'}) {
@@ -669,7 +671,9 @@ sub _format_value {
                 $normrv = $feature->{'default'};
             }
             else {
-                die SoftError->new("Feature '$name' returned an unexpected value '$normrv' above the right allowed boundary '$$feature{range_r}'")
+                die Data::FeatureFactory::SoftError->new(
+                    "Feature '$name' returned an unexpected value '$normrv' above the right allowed boundary '$$feature{range_r}'"
+                )
             }
         }
     }
@@ -845,7 +849,7 @@ sub spit {
 }
 
 {
-    package SoftError;
+    package Data::FeatureFactory::SoftError;
     sub new {
         my ($class, $message) = @_;
         $message = "SoftError occurred" if not defined $message;
