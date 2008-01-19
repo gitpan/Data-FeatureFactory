@@ -242,8 +242,22 @@ use strict;
 use Carp;
 use File::Basename;
 
-our $VERSION = '0.03';
+our $VERSION = '0.03-r1';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
+my $OPEN_OPTIONS;
+
+# check if perl can open files in utf8
+undef $@;
+{
+    my $fh;
+    eval { open $fh, '<:encoding(utf8)', $0 };
+    if ($@) {
+        $OPEN_OPTIONS = '';
+        warn qq{the open's :encoding directive not supported by your perl ($]). Files won't be opened in utf8 format.};
+    }
+    else    { $OPEN_OPTIONS = ':encoding(utf8)' }
+    close $fh;
+}
 
 sub new : method {
     croak 'Too many parameters' if @_ > 2;
@@ -374,9 +388,9 @@ sub new : method {
         
         if (exists $feature->{'values_file'}) {
             my $values_fn = $feature->{'values_file'};
-            my $opened = open my $values_fh, '<:encoding(utf8)', $values_fn;
+            my $opened = open my $values_fh, '<'.$OPEN_OPTIONS, $values_fn;
             if (not $opened) {
-                open $values_fh, '<:encoding(utf8)', $self->{'caller_path'}.'/'.$values_fn
+                open $values_fh, '<'.$OPEN_OPTIONS, $self->{'caller_path'}.'/'.$values_fn
                     or croak "Couldn't open file '$values_fn' specifying values for $name"
             }
             my %values;
@@ -762,7 +776,7 @@ sub _create_mapping : method {
             my $num_value_max = 0;
             FILENAME_R:
             for my $fn (@filenames_to_try) {
-                $opened = open my $fh, '+<:encoding(utf8)', $fn;
+                $opened = open my $fh, '+<'.$OPEN_OPTIONS, $fn;
                 if ($opened) {
                     local $_;   # for some reason, this is necessary to prevent crashes (Modification of read-only value) when e.g. in for(qw(a b)){ }
                     while (<$fh>) {
@@ -779,7 +793,7 @@ sub _create_mapping : method {
             }
             # If there's no file to recover from, try to start a new one
             if (not $opened) { FILENAME_W: for my $fn (@filenames_to_try) {
-                $opened = open my $fh, '>:encoding(utf8)', $fn;
+                $opened = open my $fh, '>'.$OPEN_OPTIONS, $fn;
                 if ($opened) {
                     print STDERR "Saving the mapping for feature '$name' to file $fn\n";
                     $feature->{'num_values_fh'} = $fh;
