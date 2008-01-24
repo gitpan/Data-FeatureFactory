@@ -1,9 +1,13 @@
 Revision history for Data::FeatureFactory
 
-0.03-r1 Made the :encoding(utf8) directive to open only take place when
+0.03-r2 2008-01-24
+        Corrected the test script to no longer fail on older perls.
+
+0.03-r1 
+        Made the :encoding(utf8) directive to open only take place when
         it is available.
 
-0.03
+0.03    
         Changes to @INC have been localized.
         Removed the disruptive use open(:std :utf8) pragma from test script.
         Added the method "names".

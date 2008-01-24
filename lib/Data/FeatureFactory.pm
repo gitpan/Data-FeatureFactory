@@ -242,7 +242,7 @@ use strict;
 use Carp;
 use File::Basename;
 
-our $VERSION = '0.03-r1';
+our $VERSION = '0.03-r2';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
 my $OPEN_OPTIONS;
 

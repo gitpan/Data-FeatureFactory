@@ -2,6 +2,7 @@
 
 use strict;
 use warnings;
+no warnings 'once';
 use utf8;
 use Carp qw(verbose);
 use Test::More tests => 103;
@@ -192,7 +193,7 @@ is(substr($@, 0, length $expected_message), $expected_message, q{croaked with na
     sub is_digits {
         die if @_ != 1;
         my @rv = $_[0] =~ /^([0-9]+)$/;
-        return @rv[0 .. $#rv]
+        return pop @rv
     }
 }
 
