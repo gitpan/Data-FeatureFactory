@@ -410,9 +410,8 @@ use strict;
 use Carp;
 use File::Basename;
 use Scalar::Util;
-use List::MoreUtils;
 
-our $VERSION = '0.04';
+our $VERSION = '0.04-r1';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
 my $OPEN_OPTIONS;
 our $CURRENT_FEATURE;
@@ -1241,7 +1240,7 @@ sub _init_translation {
         my $width = $bin ? _vector_length($feature) : 1;
         push @widths, $width;
     }
-    return \@features, \@widths
+    return map [$names->[$_], $features[$_], $widths[$_]], 0 .. $#features
 }
 
 my %x2cat = (
@@ -1251,21 +1250,21 @@ my %x2cat = (
 );
 
 sub _translate_row : method {
-    my ($self, $names, $values, $features, $widths, $options) = @_;
+    my ($self, $descrs, $values, $options) = @_;
     if (ref($values) ne 'ARRAY') {
         croak 'Values must be given by an arrayref'
     }
-    if (@$values < @$names) {
-        croak "There's not enough values in the \@values array (".scalar(@$values).") to match the number of features (".scalar(@$names).")";
+    if (@$values < @$descrs) {
+        croak "There's not enough values in the \@values array (".scalar(@$values).") to match the number of features (".scalar(@$descrs).")";
     }
     my ($from_format, $to_format, $from_NA, $to_NA, $ignore) = @$options{qw(
          from_format   to_format   from_NA   to_NA   ignore)};
     
     my $coln = 0;
     my @rv;
-    my $iterator = List::MoreUtils::each_array(@$names, @$features, @$widths);
     FEATNAME:
-    while (my ($name, $feature, $width) = $iterator->()) {
+    for my $descr (@$descrs) {
+        my ($name, $feature, $width) = @$descr;
         if (defined $ignore) {
             while (exists $ignore->[ $coln++ ]) {
                 push @rv, shift @$values;
@@ -1362,8 +1361,8 @@ sub _translate_row : method {
 sub translate_row : method {
     my ($self, $names, $values, $options) = @_;
     $names = $self->expand_names($names);
-    my ($features, $widths) = $self->_init_translation($names, $options);
-    $self->_translate_row($names, $values, $features, $widths, $options);
+    my @descrs = $self->_init_translation($names, $options);
+    $self->_translate_row(\@descrs, $values, $options);
 }
 
 sub translate : method {
@@ -1395,7 +1394,7 @@ sub translate : method {
         croak 'No feature names specified for translate'
     }
     
-    my ($features, $widths) = $self->_init_translation(\@names, $options);
+    my @descrs = $self->_init_translation(\@names, $options);
     
     # Translate the header, if there's one.
     if (@orig_header_fields) {
@@ -1421,7 +1420,7 @@ sub translate : method {
         chomp $row;
         my @values = split /$ifs/, $row;
         undef $@;
-        my @translated = eval { $self->_translate_row(\@names, \@values, $features, $widths, $options) };
+        my @translated = eval { $self->_translate_row(\@descrs, \@values, $options) };
         warn("$@ (line $.)"), next ROW if $@;
         print {$sink} join($ofs, @translated), "\n";
     }
