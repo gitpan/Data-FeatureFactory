@@ -5,7 +5,7 @@ use warnings;
 no warnings 'once';
 use utf8;
 use Carp qw(verbose);
-use Test::More tests => 103;
+use Test::More tests => 113;
 
 my $WARNINGS;
 sub catchwarn {
@@ -90,6 +90,71 @@ is(join(' ', @by_list, @by_name), join(' ', @by_all), q{evaluating by list, name
 undef $funcLoad;
 
 {
+    package Labels;
+    use base qw(Data::FeatureFactory);
+    our @features = (
+        { name => 'ball',       code => \&any },
+        { name => 'egg',        code => \&any, label => 'living' },
+        { name => 'moon',       code => \&any, label => 'Big' },
+        { name => 'pig',        code => \&any, label => [qw(big living)] },
+        { name => 'cigarette',  code => \&any, label => [qw(Long)] },
+        { name => 'finger',     code => \&any, label => [qw(long LIVING)] },
+        { name => 'neon',       code => \&any, label => [qw(long BIG)] },
+        { name => 'bamboo',     code => \&any, label => [qw(long big living)] },
+        { name => 'bullet',     code => \&any, label => 'dark' },
+        { name => 'strawberry', code => \&any, label => [qw(dark liVing)] },
+        { name => 'earth',      code => \&any, label => [qw(big daRk)] },
+        { name => 'elephant',   code => \&any, label => [qw(darK big living)] },
+        { name => 'pen',        code => \&any, label => [qw(dark Long)] },
+        { name => 'worm',       code => \&any, label => [qw(living loNg dark)] },
+        { name => 'rifle',      code => \&any, label => [qw(dark long biG)] },
+        { name => 'tree',       code => \&any, label => [qw(big dark livinG long)] },
+    );
+    sub any {
+        return $Data::FeatureFactory::CURRENT_FEATURE."(@_)"
+    }
+}
+
+my $labels = Labels->new;
+
+my @all = $labels->evaluate('ALL', 'normal', 1);
+my $expected = 'ball(1) egg(1) moon(1) pig(1) cigarette(1) finger(1) neon(1) bamboo(1) '
+              .'bullet(1) strawberry(1) earth(1) elephant(1) pen(1) worm(1) rifle(1) tree(1)';
+is(join(' ', @all), $expected, q{Evaluating all features (some labeled)});
+
+my @big = $labels->evaluate('BIG', 'normal', 2);
+$expected = 'moon(2) pig(2) neon(2) bamboo(2) earth(2) elephant(2) rifle(2) tree(2)';
+is (join(' ', @big), $expected, q{Evaluating features with a label});
+
+my @long_dark = $labels->evaluate('LONG DARK', 'normal', 3);
+$expected = 'cigarette(3) finger(3) neon(3) bamboo(3) bullet(3) strawberry(3) earth(3) elephant(3) pen(3) worm(3) rifle(3) tree(3)';
+is (join(' ', @long_dark), $expected, q{Evaluating features with two labels});
+
+my @dark_long = $labels->evaluate('DARK LONG', 'normal', 3);
+is (join(' ', @dark_long), join(' ', @long_dark), q{Different order of labels won't affect result});
+
+@dark_long = $labels->evaluate('DARK +LONG', 'normal', 3);
+is (join(' ', @dark_long), join(' ', @long_dark), q{Adding + before label name won't affect result});
+
+my @living_big_nodark_nolong = $labels->evaluate('LIVING +BIG -DARK -LONG', 'normal', 4);
+$expected = 'egg(4) moon(4) pig(4)';
+is (join(' ', @living_big_nodark_nolong), $expected, q{Several + and - labels});
+
+my @nobig_nodark = $labels->evaluate('-BIG -DARK', 'normal', 5);
+$expected = 'ball(5) egg(5) cigarette(5) finger(5)';
+is (join(' ', @nobig_nodark), $expected, q{Minus labels only});
+
+my @wrong_label = $labels->evaluate('WRONG_LABEL', 'normal', 6);
+is (scalar(@wrong_label), 0, q{Wrong label gave an empty result});
+
+undef $@;
+my $expected_message = q{Label 'ALL' is special and can't be used with the minus sign, as in BIG -ALL +DARK};
+eval { $labels->evaluate('BIG -ALL +DARK', 'normal', 7) };
+is(substr($@, 0, length $expected_message), $expected_message, q{croaked with label -ALL});
+
+undef $labels;
+
+{
     package NamelessFeature;
     use base qw(Data::FeatureFactory);
     our @features = (
@@ -102,7 +167,7 @@ undef $funcLoad;
 }
 
 undef $@;
-my $expected_message = q{There was a feature without a name. Each record in the @features array must be a hashref with a 'name' field at least};
+$expected_message = q{There was a feature without a name. Each record in the @features array must be a hashref with a 'name' field at least};
 eval { NamelessFeature->new };
 is(substr($@, 0, length $expected_message), $expected_message, q{croaked with nameless feature});
 
@@ -409,7 +474,7 @@ is($WARNINGS, 2, q{warned about non-numbers in range});
 undef $@;
 $expected_message = "More than two values (5) specified for feature 'defunct'";
 eval { ManyBooleanValues->new };
-is(substr($@, 0, length $expected_message), $expected_message, q{many boolean features});
+is(substr($@, 0, length $expected_message), $expected_message, q{many boolean values});
 
 {
     package TrueTwice;
@@ -544,6 +609,23 @@ my $default = $postproc->evaluate('wvals', 'normal', 'unexpected');
 is($default, 'ILLEGAL', q{default value postprocessed});
 
 undef $postproc;
+
+### Accessing the name of the feature inside its code
+{
+    package FeatureName;
+    use base qw(Data::FeatureFactory);
+    our @features = (
+        { name => 'foo', code => \&code },
+        { name => 'bar', code => \&code },
+    );
+    sub code {
+        return $Data::FeatureFactory::CURRENT_FEATURE
+    }
+}
+
+my $featureName = FeatureName->new;
+my ($foo, $bar) = $featureName->evaluate([qw(foo bar)], 'normal', 'arg');
+is($foo.':'.$bar, 'foo:bar', q{features know their names});
 
 ### Evaluating features in numeric format
 {

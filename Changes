@@ -1,5 +1,18 @@
 Revision history for Data::FeatureFactory
 
+0.04
+        Added the variable $Data::FeatureFactory::CURRENT_FEATURE.
+        Added conversions between formats.
+        Corrected a bug preventing range to be applied to features with type
+        specified non-canonically.
+        Added explicit values to boolean features.
+        Changed the mapping mechanism to take care of mapping
+        postprocessed values to unpostprocessed categorial ones.
+        Refactored some tasks to subs
+        (expand_names, _values_of, _vector_length
+        Some error messages improved.
+        Other minor bugs and sillinesses disposed of.
+
 0.03-r2 2008-01-24
         Corrected the test script to no longer fail on older perls.
 

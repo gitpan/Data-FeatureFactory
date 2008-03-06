@@ -31,13 +31,27 @@ Data::FeatureFactory - evaluate features normally or numerically
  my $f = MyFeatures->new;
  
  # evaluate all the features on all your data and format them numerically
+ open FILEHANDLE, '>my_features.txt';
+ print FILEHANDLE join(' ', $f->names), "\n";   # prepend a header
  for my $record (@data) {
      my @values = $f->evaluate('ALL', 'numeric', $record);
-     print join(' ', @values);
+     print FILEHANDLE join(' ', @values);
  }
+ close FILEHANDLE;
  
  # specify the features to evaluate and gather the result in binary form
  my @vector = $f->evaluate([qw(no_of_letters first_letter)], 'binary', 'foo');
+
+ # translate the once evaluated features to other formats
+ open SOURCE, 'my_features.txt';
+ open SINK,  '>my_features.csv';
+ $f->translate(SOURCE, SINK, {
+    from_format => 'numeric', to_format => 'normal',
+    FS => ' ', OFS => ',',  # fields from space-separated to comma-separated
+    header => 1,    # the names of the features are in the first row of SOURCE
+    # names => 'ALL',    # header specified, so we don't need this    
+    from_NA => 0, to_NA => 'N/A'    # interpret zeroes as N/A's and substitute
+ });
 
 =head1 DESCRIPTION
 
@@ -148,10 +162,31 @@ C<evaluate>. You can override it for specific features with this option.
 You'll mostly use this to prevent the target (to-predict) feature from being
 numified or binarified: { name => 'target', format => 'normal' }.
 
+=item label
+
+The value of this field can either be a string or an arrayref specifying a list
+of labels for the feature. It's usable when you want to evaluate a group of
+features without having to list them.
+
+See the C<evaluate> method for details.
+
 =back
 
-Note that both the feature and the optional postprocessing routine are evaluated
+=head3 Notice
+
+Both the feature and the optional postprocessing routine are evaluated
 in scalar context.
+
+When the N/A option is used, then C<undef> is treated specially but if N/A is
+not specified, then it is not. Assume you have a feature with values specified,
+a default value and the feature returns undef. Then if you use the N/A option,
+the N/A value is substituted, but if you don't use the N/A option, the default
+value is substituted instead (or it is left as an empty string if it's a valid
+value).
+
+The postprocessing subroutine, if specified, can be called several times during
+the construction of the object and within any methods. So it's highly advisable
+for postprocessing subroutines to have no side-effects.
 
 =head2 Creating the features object
 
@@ -173,9 +208,22 @@ arguments: 1) names of the features to evaluate, 2) the format in which they
 should be output and 3) arguments for the features themselves.
 
 The first argument can be an arrayref with the names of the features, or it can
-be the "ALL" string, which denotes that all features defined shall be evaluated.
-If it contains any other string, then it's interpreted as the name of the only
-feature to evaluate.
+be a string. In case it's a string containing lowercase letters, then it's
+interpreted as the name of the only feature to evaluate.
+If all the letters in the string are UPPERCASE, then it's interpreted as a
+whitespace-separated list of labels. Each label can be prefixed by a C<-> sign
+or a C<+> sign. No prefix is the same as the C<+> prefix. The features evaluated
+are then those, who have at least one C<+>label but no C<->label. The presence
+of a negative label overrides the presence of a positive one in case of
+collisions. There is a special label C<ALL>, which you should never define for a
+feature and which will match any feature. It must not be used with the minus
+sign. Only specifying negative labels implies the C<ALL> label, so you can write
+C<-TARGET> to get all but the target features. The features are sorted by how
+they appear in the @features array - the order of labels has no effect
+whatsoever and no feature is added twice. C<ALL ALL ALL> is the same as just
+C<ALL>.
+Since labels can only be specified in upper case for the C<evaluate> method,
+they are matched case-insensitive.
 
 The second argument is C<normal>, C<numeric> or C<binary>. C<normal> means that
 the features' return values should be left alone (but postprocessed if such
@@ -187,6 +235,10 @@ The return value is the list of what the features returned. In case of binary,
 there can be a
 different (typically greater) number of elements in the returned list than there
 were features to evaluate.
+
+During evaluation, the features can access the
+C<$Data::FeatureFactory::CURRENT_FEATURE> variable, which holds the name of the
+feature evaluated.
 
 =head3 Transfer to numeric / binary form
 
@@ -229,6 +281,122 @@ values, then
 will result in @v being C<('_', '_', '_')>. If C<feature1> returns undef, that
 is.
 
+N/A values don't get postprocessed in case a postprocessing function is
+specified.
+
+=head2 Conversion between formats
+
+Once you evaluate the features on a million observations and save it in a file,
+you might want to get the values in another format without having to evaluate
+the features all over again (which can be time consuming). This is where the
+method C<translate> comes in handy.
+
+C<translate> accepts three arguments: Source filehandle, destination filehandle
+and a hash with options (some of which aren't actually optional). The options
+are:
+
+=over 4
+
+=item from_format
+
+=item to_format
+
+C<normal>, C<numeric> or C<binary>.
+
+=item names
+
+The names of the features that are in the source file, in order. This can be
+anything that the C<evaluate> method accepts: An arrayref with the actual names
+of the features present, or a label expression (see L<Evaluating features>).
+
+=item header
+
+If the names of the features are in the first line of the source file, don't
+specify the C<names> option but set the C<header> option to a true value
+instead.
+
+The names of the features in the header shall be separated with the same string
+that separates the values on the following lines. There can be any number of
+separators between the feature names and Data::FeatureFactory will treat
+C<name1,name2> exactly the same as C<name1,,,name2> (assuming you use comma as
+separator). This only applies in the header and has a reason:
+
+When the header is in the source file, then it's translated to the output as
+well. And since in the binary format, the features span usually more than one
+column, Data::FeatureFactory::translate will put so many separators after each
+feature name as there are columns to its value. This is so you need not use the
+module to figure out how many digits each feature has. For example, if you have
+feature C<feat1> with three possible values, then its name in the header will be
+followed by three separators: C<feat1,,,feat2>.
+
+When reading the header, this is discarded because 1) You may want to write the
+header yourself or use one from a non-binary version and 2) Data::FeatureFactory
+has all information it needs in the @features array.
+
+=item FS
+
+The field separator that delimits the values in the files.
+
+=item OFS
+
+The output field separator: If you want the values separated with a different
+character / string in the destination file than in the source file, then this is
+the option to use.
+
+=item from_NA
+
+=item to_NA
+
+The value specified for C<from_NA> is interpreted as denoting the N/A values in
+the source file. These values will be converted to C<to_NA> in the destination
+file. If the C<Data::FeatureFactory> object has the N/A option specified, then
+that value is assumed for any of these two options implicitly.
+
+=back
+
+Required options are: from_format, to_format, FS and either names or header.
+
+Note that when translating a categorial feature without values specified to/from
+numeric format, then the dynamic mapping of values created by
+C<Data::FeatureFactory> must get resumed successfully. Otherwise you'll get an
+error about unexpected value as soon as the translation is attempted.
+
+=head3 Translating rows (not files)
+
+There's also a lower-level method available: C<translate_row>. Unlike the
+C<translate> method, it doesn't accept filehandles but accepts an arrayref with
+values and returns an array with the translated values. The arguments are:
+
+=over 4
+
+=item names
+
+This time a required argument, same as the C<names> option to C<translate>.
+
+=item values
+
+The arrayref of values to convert.
+
+=item options
+
+Same as with the C<translate> method, except the C<names> and C<header> options
+are not accepted.
+
+=back
+
+This method has the slight difference over C<translate> (beside only translating
+one row per call) that if the C<to_NA> option is specified but neither
+C<from_NA> option to the method nor the C<N/A> option to the object are
+specified, then undef's are interpreted as N/A values.
+
+=head2 Other low-level methods
+
+There are some other subroutines defined in C<Data::FeatureFactory>. One of
+those that might be of use to you is the C<expand_names> method, which you can
+give a label expression as an argument and it will give you the list of feature
+names that this label expression represents. For a description of how labels
+work, see L<Evaluating features>.
+
 =head1 COPYRIGHT
 
 Copyright (c) 2008 Oldrich Kruza. All rights reserved.
@@ -241,28 +409,31 @@ the same terms as Perl itself.
 use strict;
 use Carp;
 use File::Basename;
+use Scalar::Util;
+use List::MoreUtils;
 
-our $VERSION = '0.03-r2';
+our $VERSION = '0.04';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
 my $OPEN_OPTIONS;
+our $CURRENT_FEATURE;
 
 # check if perl can open files in utf8
-undef $@;
 {
     my $fh;
+    undef $@;
     eval { open $fh, '<:encoding(utf8)', $0 };
     if ($@) {
         $OPEN_OPTIONS = '';
         warn qq{the open's :encoding directive not supported by your perl ($]). Files won't be opened in utf8 format.};
     }
-    else    { $OPEN_OPTIONS = ':encoding(utf8)' }
+    else { $OPEN_OPTIONS = ':encoding(utf8)' }
     close $fh;
 }
 
 sub new : method {
-    croak 'Too many parameters' if @_ > 2;
     my ($class, $args) = @_;
     $class = ref $class if ref $class;
+    croak "Too many parameters to $class->new" if @_ > 2;
     my $self = bless +{}, $class;
     
     if (defined $args) {
@@ -295,7 +466,7 @@ sub new : method {
     $self->{'featkeys'} = \@featkeys;
     $self->{'caller_path'} = dirname( (caller)[1] );
     
-    my %supported_option = ( map {;$_=>1} qw(code default format name postproc range type values values_file) );
+    my %supported_option = ( map {;$_=>1} qw(code default format label name postproc range type values values_file) );
     my %accepted_option  = ( map {;$_=>1} qw(cat2num cat2num_dyna num2cat num2cat_dyna num_values_fh values_ordered) );
     
     # parse the @features array
@@ -417,11 +588,11 @@ sub new : method {
                 croak "Invalid range '$$feature{range}' specified for feature '$name'. The left boundary must be lesser than the right one"
             }
             
-            if ($feature->{'type'} eq 'int') {
+            if ($feature->{'type'} =~ /^int/i) {
                 $feature->{'values'} = {map {;$_ => 1} $l .. $r};
                 $feature->{'values_ordered'} = [$l .. $r];
             }
-            elsif ($feature->{'type'} eq 'num') { 
+            elsif ($feature->{'type'} =~ /^num/i) { 
                 $feature->{'range_l'} = $l;
                 $feature->{'range_r'} = $r;
             }
@@ -471,6 +642,10 @@ sub new : method {
                     }
                     $feature->{'values'} = +{ map {;$_=>1} @values };
                 }
+                else {
+                    $feature->{'values'} = {0 => 1, 1 => 1};
+                    $feature->{'values_ordered'} = [0,1];
+                }
                 if (exists $feature->{'default'}) {
                     my $def = $feature->{'default'};
                     my @vals = values %{ $feature->{'values'} };
@@ -518,16 +693,6 @@ sub new : method {
             }
         }
         
-        # There are more problems with this feature than I had thought. It's not going to be implemented soon.
-        # Add the optional N/A value to accepted values
-        if (0 and exists $self->{'N/A'} and exists $feature->{'values'} and not exists $feature->{'values'}{ $self->{'N/A'} }) {
-            my $na = $self->{'N/A'};
-            $feature->{'values'}{$na} = 1;
-            if (exists $feature->{'values_ordered'}) {
-                push @{ $feature->{'values_ordered'} }, $na;
-            }
-        }
-        
         if (exists $feature->{'format'}) {
             my $format = $feature->{'format'};
             if (not $format =~ /^ (?: normal | numeric | binary ) $/x) {
@@ -556,13 +721,64 @@ sub new : method {
         else {
             $code = *{$class.'::'.$name}{CODE};
             if (ref $code ne 'CODE') {
-                croak "Couldn't find the code (function) for feature '$name'. Define it as a function '$name' in the '$class' package"
+                croak "Couldn't find the code (function) for feature '$name'. Define it as a function '$name' in the '$class' package. Stopped"
             }
         }
         $feature->{'code'} = $code;
+        
+        if (exists $feature->{'label'}) {
+            my $label = $feature->{'label'};
+            if (ref $label eq 'ARRAY') {
+                $feature->{'label'} = {map {;uc($_) => 1} @$label};
+            }
+            elsif (ref $label) {
+                croak "Label must be a string or an array of strings - feature '$name' has a ".ref($label).'ref'
+            }
+            else {
+                $feature->{'label'} = {uc($label) => 1};
+            }
+        }
     }
 #    print map "*$_\n", map keys(%$_), @{ $self->{'features'} };
     return $self
+}
+
+sub expand_names : method {
+    my ($self, $featnames) = @_;
+    my @featkeys = @{ $self->{'featkeys'} };
+    my %feat_named = %{ $self->{'feat_named'} };
+    
+    if ($featnames eq 'ALL') {
+        $featnames = \@featkeys;
+    }
+    elsif (ref $featnames eq 'ARRAY') {
+#        $featnames = [@$featnames]; # make a copy
+    }
+    # features given by labels
+    elsif ($featnames !~ /[[:lower:]]/ and $featnames =~ /[[:upper:]]/) {
+        my @all_labels = split /\s+/, $featnames;
+        my @plus_labels  = map {s/^\+//; $_}  grep {substr($_, 0, 1) ne '-'} @all_labels;
+        my @minus_labels = map {substr $_, 1} grep {substr($_, 0, 1) eq '-'} @all_labels;
+        # Specifying just '-LABEL' means all but those that have LABEL
+        if (@plus_labels == 0 and @minus_labels > 0) {
+            @plus_labels = qw(ALL);
+        }
+        if (grep {$_ eq 'ALL'} @minus_labels) {
+            croak "Label 'ALL' is special and can't be used with the minus sign, as in $featnames"
+        }
+        $featnames = [];
+        for my $featkey (@featkeys) {
+            my $feature = $feat_named{ $featkey };
+            my $included = grep { $_ eq 'ALL' or exists $feature->{'label'}{$_} } @plus_labels;
+            my $excluded = grep {                exists $feature->{'label'}{$_} } @minus_labels;
+            push @$featnames, $featkey if $included and not $excluded;
+        }
+    }
+    else {
+        $featnames = ["$featnames"];
+    }
+    
+    return $featnames
 }
 
 sub evaluate : method {
@@ -571,14 +787,7 @@ sub evaluate : method {
     my @featkeys = @{ $self->{'featkeys'} };
     my %feat_named = %{ $self->{'feat_named'} };
     
-    if ($featnames eq 'ALL') {
-        $featnames = \@featkeys;
-    }
-    elsif (ref $featnames eq 'ARRAY') {
-    }
-    else {
-        $featnames = ["$featnames"];
-    }
+    $featnames = $self->expand_names($featnames);
     my @feats;
     for my $featname (@$featnames) {
         if (not exists $feat_named{$featname}) {
@@ -603,12 +812,17 @@ sub evaluate : method {
     my @rv;
     for my $feature (@feats) {
         my $name = $feature->{'name'};
+        $CURRENT_FEATURE = $name;
         my $normrv = $feature->{'code'}(@args);
+        undef $CURRENT_FEATURE;
         my $format = exists $feature->{'format'} ? $feature->{'format'} : $format;
         
         if (not defined $normrv and exists $self->{'N/A'}) {
             my $na = $self->{'N/A'};
-            if ($format eq 'binary') {
+            if (exists $feature->{'type'} and $feature->{'type'} eq 'boo') {
+                push @rv, $na;
+            }
+            elsif ($format eq 'binary') {
                 # take one of the vectors in cat2bin
                 my @dummy = @{ (values %{ $feature->{'cat2bin'} })[0] };
                 if (not @dummy) {
@@ -645,6 +859,7 @@ sub _format_value {
     my ($feature, $normrv, $format, @args) = @_;
     my @rv;
     my $name = $feature->{'name'};
+    local $\; local $,;
     
     # convert to number if appropriate
     if (exists $feature->{'type'}) {
@@ -723,8 +938,15 @@ sub _format_value {
                 $n = ++$feature->{'num_value_max'};
                 $feature->{'cat2num_dyna'}{$normrv} = $n;
                 $feature->{'num2cat_dyna'}{$n} = $normrv;
-                print {$feature->{'num_values_fh'}} $normrv, "\t", $n, "\n"
-                or croak "Couldn't print the mapping of categorial value '$normrv' to numeric value '$n' for feature '$name' to a file ($!).\nPlease provide a list of values for the feature to avoid this";
+                my @toprint = ($normrv, $n);
+                if (exists $feature->{'postproc'}) {
+                    my $ppd = $feature->{'postproc'}->($normrv);
+                    $feature->{'pp2cat_dyna'}{$ppd} = $normrv;
+                    push @toprint, $ppd;
+                }
+                print {$feature->{'num_values_fh'}} join("\t", @toprint)."\n"
+                or croak "Couldn't print the mapping of categorial value '$normrv' to numeric value '$n' for feature '$name' to a file ($!).\n"
+                . 'Please provide a list of values for the feature to avoid this'
             }
             @rv = ($n);
         }
@@ -746,10 +968,28 @@ sub _format_value {
     return @rv
 }
 
+sub _values_of {
+    my ($feature) = @_;
+    my @values;
+    if (exists $feature->{'values_ordered'}) {
+        @values = @{ $feature->{'values_ordered'} };
+    }
+    elsif (exists $feature->{'values'}) {
+        @values = keys %{ $feature->{'values'} };
+    }
+    else {
+        croak "Attempted to gather the values of feature '$$feature{name}', which has none specified"
+    }
+    if (exists $feature->{'default'} and not exists $feature->{'values'}{ $feature->{'default'} }) {
+        push @values, $feature->{'default'};
+    }
+    return @values
+}
+
 sub _create_mapping : method {
     my ($class, $feature, $format) = @_;
     $class = ref $class if ref $class;
-    if (exists $feature->{'format'}) {
+    if (exists $feature->{'format'} and $format ne 'postprocd') {
         $format = $feature->{'format'};
     }
     
@@ -781,10 +1021,11 @@ sub _create_mapping : method {
                     local $_;   # for some reason, this is necessary to prevent crashes (Modification of read-only value) when e.g. in for(qw(a b)){ }
                     while (<$fh>) {
                         chomp;
-                        my ($cat, $num) = split /\t/;
+                        my ($cat, $num, $ppd) = split /\t/;
                         $num_value_max = $num if $num > $num_value_max;
                         $feature->{'cat2num_dyna'}{$cat} = $num;
                         $feature->{'num2cat_dyna'}{$num} = $cat;
+                        $feature->{'pp2cat_dyna' }{$ppd} = $cat if defined $ppd;
                     }
                     print STDERR "Saving the mapping for feature '$name' to file $fn\n";
                     $feature->{'num_values_fh'} = $fh;
@@ -802,21 +1043,13 @@ sub _create_mapping : method {
             }}
             if (not $opened) {
                 delete $feature->{'num_values_fh'};
-                croak "Couldn't open a file for saving the mapping the categories of feature '$name' to numbers. Please specify the values for the feature to avoid this"
+                croak "Couldn't open a file for saving the mapping the categories of feature '$name' to numbers. "
+                . 'Please specify the values for the feature to avoid this'
             }
             $feature->{'num_value_max'} = $num_value_max;
         }
         else {  # Got values specified - create a mapping
-            my @values;
-            if (exists $feature->{'values_ordered'}) {
-                @values = @{ $feature->{'values_ordered'} };
-            }
-            else {
-                @values = keys %{ $feature->{'values'} };
-            }
-            if (exists $feature->{'default'} and not exists $feature->{'values'}{ $feature->{'default'} }) {
-                push @values, $feature->{'default'};
-            }
+            my @values = _values_of($feature);
             my $n = 1;
             for my $value (@values) {
                 $feature->{'cat2num'}{$value} = $n;
@@ -834,16 +1067,7 @@ sub _create_mapping : method {
             croak "Attempted to convert feature '$name' to binary without specifying its values";
         }
         
-        my @values;
-        if (exists $feature->{'values_ordered'}) {
-            @values = @{ $feature->{'values_ordered'} };
-        }
-        else {
-            @values = keys %{ $feature->{'values'} };
-        }
-        if (exists $feature->{'default'} and not exists $feature->{'values'}{ $feature->{'default'} }) {
-            push @values, $feature->{'default'};
-        }
+        my @values = _values_of($feature);
         
         my $n = 0;
         my @zeroes = (0) x scalar(@values);
@@ -856,8 +1080,23 @@ sub _create_mapping : method {
             $n++;
         }
     }
+    elsif ($format eq 'postprocd') {
+        return if exists $feature->{'pp2cat'};
+        my $name = $feature->{'name'};
+        if (not exists $feature->{'postproc'}) {
+            croak "Feature '$name' doesn't have a postprocessing function specified - can't create mapping from postprocessed values. Stopped"
+        }
+        my $ppfun = $feature->{'postproc'};
+        my @values = _values_of($feature);
+        my %pp2cat;
+        for my $value (@values) {
+            my $ppd = $ppfun->($value);
+            $pp2cat{ $ppd } = $value;
+        }
+        $feature->{'pp2cat'} = \%pp2cat;
+    }
     else {
-        croak "Format '$format' not recognized - please specify 'normal', 'numeric' or 'binary' (should have caught this earlier)"
+        croak "Format '$format' not recognized - please specify 'normal', 'numeric', 'binary' or 'postprocd' (should have caught this earlier)"
     }
 }
 
@@ -866,11 +1105,326 @@ sub names : method {
     return map $_->{'name'}, @{ $self->{'features'} }
 }
 
-# to delete
-sub spit {
-    my ($self, $featname) = @_;
-    use Data::Dumper;
-    return(Dumper($self->{'feat_named'}{$featname}))
+sub _vector_length { # how many bits will the binary representation of this feature have
+    my ($feature) = @_;
+    if (exists $feature->{'type'} and $feature->{'type'} eq 'boo') {
+        return 1
+    }
+    return scalar _values_of($feature)
+}
+
+sub _shift_value {
+    my ($feature, $format, $values) = @_;
+    if ($format ne 'binary') {
+        return shift @$values
+    }
+    my $n = _vector_length($feature);
+    if (@$values < $n) {
+        croak "There's not enough fields left to shift a $format value (width $n) of feature '$$feature{name}' from a length "
+        . scalar(@$values) . " list ('@$values')"
+    }
+    return splice @$values, 0, $n
+}
+
+sub _init_translation {
+    my ($self, $names, $options) = @_;
+    if (ref($names) ne 'ARRAY') {
+        croak 'Names must be given by an arrayref'
+    }
+    if (ref($options) ne 'HASH') {
+        croak 'Options must be given by a hashref'
+    }
+    
+    my %accepted_options = map {;$_=>1} qw(
+        names from_format to_format from_NA to_NA FS OFS header ignore
+    );
+    for (keys %$options) {
+        if (not exists $accepted_options{$_}) {
+            croak "Translate does not accept option '$_'. Accepted options are: ".join(' ', keys %accepted_options).'. Stopped'
+        }
+    }
+    
+    my $from_format = $options->{'from_format'};
+    my $to_format   = $options->{'to_format'};
+    for ($from_format, $to_format) {
+        if (! m/^(?: normal | numeric | binary )$/x) {
+            croak '{to,from}_format must be one of "normal", "numeric" or "binary"'
+        }
+    }
+    
+    if (exists $options->{'from_NA'} and exists $options->{'to_NA'}) {
+    }
+    elsif (exists $options->{'from_NA'} and exists $self->{'N/A'}) {
+        $options->{'to_NA'}   = $self->{'N/A'};
+    }
+    elsif (exists $options->{'to_NA'}   and exists $self->{'N/A'}) {
+        $options->{'from_NA'} = $self->{'N/A'};
+    }
+    elsif (exists $options->{'to_NA'}) {
+        $options->{'from_NA'} = undef;
+    }
+    elsif (exists $options->{'from_NA'}) {
+        croak 'from_NA specified but neither to_NA nor global N/A value specified'
+    }
+    elsif (exists $self->{'N/A'}) {
+        $options->{'from_NA'} = $options->{'to_NA'} = $self->{'N/A'};
+    }
+    
+    if (exists $options->{'header'} and not $options->{'header'}) {
+        delete $options->{'header'};
+    }
+    
+    if (exists $options->{'ignore'}) {
+        my $ignore = $options->{'ignore'};
+        $options->{'ignore'} = [];
+        
+        if (not ref $ignore) {
+            $ignore = [$ignore];
+        }
+        
+        if (ref($ignore) eq 'ARRAY') {
+            my $has_non_nums = grep !Scalar::Util::looks_like_number($_), @$ignore;
+            if ($has_non_nums) {
+                warn 'Some of the specifications of columns to ignore are non-numeric'
+            }
+            for my $idx (@$ignore) {
+                if ($idx < 0) {
+                    croak "Negative column indices aren't currently supported. Trailing columns are ignored always. Stopped"
+                }
+                $options->{'ignore'}[ $idx ] = 1;
+            }
+        }
+        else {
+            croak 'Option "ignore" can only be a column number or an array thereof. Stopped'
+        }
+        
+        # Remove the names of the columns to ignore if the names come from a header
+        if (exists $options->{'header'}) {
+            for my $idx (sort {$b <=> $a} @$ignore) {
+                splice @$names, $idx, 1;
+            }
+        }
+    }
+    
+    my (@features, @widths);
+    my %names = map {;$_=>1} $self->names;
+    for my $name (@$names) {
+        if (not exists $names{$name}) {
+            croak "Feature '$name' not found among ".join(' ', $self->names).". Stopped"
+        }
+        my $feature = $self->{'feat_named'}{ $name };
+        $self->_create_mapping($feature, $from_format);
+        $self->_create_mapping($feature, $to_format);
+        if ($from_format eq 'normal' and exists $feature->{'postproc'}) {
+            if (exists $feature->{'values'}) {
+                $self->_create_mapping($feature, 'postprocd');
+            }
+            elsif (exists $feature->{'format'} or $to_format eq 'normal') {
+                # translating normal -> normal -- kein problem
+            }
+            elsif (join(' ', sort $from_format, $to_format) eq 'normal numeric') {
+                # translating with dynamic mapping
+            }
+            else {
+                croak "Feature '$name' is postprocessed and about to be translated from normal but has no values specified. Stopped"
+            }
+        }
+        push @features, $feature;
+        my $bin = 0;
+        if (exists $feature->{'format'} and $feature->{'format'} eq 'binary') {
+            $bin = 1;
+        }
+        elsif (exists $feature->{'format'}) {}
+        elsif ($from_format eq 'binary') {
+            $bin = 1;
+        }
+        my $width = $bin ? _vector_length($feature) : 1;
+        push @widths, $width;
+    }
+    return \@features, \@widths
+}
+
+my %x2cat = (
+    binary    => 'bin2cat',
+    numeric   => 'num2cat',
+    postprocd => 'pp2cat',
+);
+
+sub _translate_row : method {
+    my ($self, $names, $values, $features, $widths, $options) = @_;
+    if (ref($values) ne 'ARRAY') {
+        croak 'Values must be given by an arrayref'
+    }
+    if (@$values < @$names) {
+        croak "There's not enough values in the \@values array (".scalar(@$values).") to match the number of features (".scalar(@$names).")";
+    }
+    my ($from_format, $to_format, $from_NA, $to_NA, $ignore) = @$options{qw(
+         from_format   to_format   from_NA   to_NA   ignore)};
+    
+    my $coln = 0;
+    my @rv;
+    my $iterator = List::MoreUtils::each_array(@$names, @$features, @$widths);
+    FEATNAME:
+    while (my ($name, $feature, $width) = $iterator->()) {
+        if (defined $ignore) {
+            while (exists $ignore->[ $coln++ ]) {
+                push @rv, shift @$values;
+            }
+        }
+        my $from_format = exists $feature->{'format'} ? $feature->{'format'} : $from_format;
+        my $to_format   = exists $feature->{'format'} ? $feature->{'format'} : $to_format;
+        my @value = splice @$values, 0, $width;
+        if (@value == 0) {
+            croak "Zero-width value obtained for feature '$name'"
+        }
+        
+        # Check if the value is N/A
+        my $is_NA = 0;
+        if (@value == 1) {
+            my $value = $value[0];
+            if (defined $from_NA and $value eq $from_NA) {
+                $is_NA = 1;
+            }
+            elsif (defined $to_NA and not defined $value and not defined $from_NA) {
+                $is_NA = 1;
+            }
+        }
+        else {
+            if (defined $to_NA and not grep {defined $_} @value and not defined $from_NA) {
+                $is_NA = 1;
+            }
+            elsif (defined $from_NA and not grep {$_ ne $from_NA} @value) {
+                $is_NA = 1;
+            }
+        }
+        
+        # Append the N/A if appropriate
+        if ($is_NA) {
+            my $n = $to_format eq 'binary' ? _vector_length($feature) : 1;
+            push @rv, ( ($to_NA) x $n );
+            next FEATNAME
+        }
+        
+        if ($from_format eq $to_format) {
+            push @rv, @value;
+            next FEATNAME
+        }
+        else {
+            my $catval;
+            my $from_format = $from_format;
+            if ($from_format eq 'normal' and exists $feature->{'postproc'}) {
+                $from_format = 'postprocd';
+            }
+            if ($from_format eq 'normal') {
+                ($catval) = @value;
+            }
+            elsif ($from_format eq 'numeric' and exists $feature->{'type'} and $feature->{'type'} =~ /^(int|num|boo)$/) {
+                ($catval) = @value;
+            }
+            elsif ($from_format eq 'binary' and exists $feature->{'type'} and $feature->{'type'} eq 'boo') {
+                ($catval) = @value;
+            }
+            else {
+                my $transfer = $x2cat{ $from_format };
+                if (not defined $transfer) {
+                    croak "Internal error: Unexpected value for \$from_format: '$from_format'"
+                }
+                if (not exists $feature->{ $transfer }) {
+                    if (exists $feature->{ $transfer.'_dyna' }) {
+                        $transfer = $transfer.'_dyna';
+                    }
+                    else {
+                        croak "Cannot find mapping '$transfer' for feature '$name'"
+                    }
+                }
+                my $valval = join(' ', @value);
+                if (not exists $feature->{ $transfer }{ $valval }) {
+                    my $hint = '';
+                    if ($valval eq $feature->{'name'}) {
+                        $hint = ". Maybe you forgot there was a header in your file? Stopped"
+                    }
+                    croak "Unexpected value '$valval' of feature '$name' for transfer '$transfer'$hint"
+                }
+                $catval = $feature->{ $transfer }{ $valval };
+            }
+            
+            my @formatted = _format_value($feature, $catval, $to_format, 'NO_ARGS:TRANSLATING_ONLY');
+            push @rv, @formatted;
+        }
+    }
+    
+    # Append the trailing columns
+    push @rv, @$values;
+    
+    return @rv
+}
+
+sub translate_row : method {
+    my ($self, $names, $values, $options) = @_;
+    $names = $self->expand_names($names);
+    my ($features, $widths) = $self->_init_translation($names, $options);
+    $self->_translate_row($names, $values, $features, $widths, $options);
+}
+
+sub translate : method {
+    my ($self, $source, $sink, $options) = @_;
+    local $\; local $,;
+    if (not defined Scalar::Util::openhandle($source)) {
+        croak 'Source must be given by an open filehandle'
+    }
+    if (not defined Scalar::Util::openhandle($sink)) {
+        croak 'Destination must be given by an open filehandle'
+    }
+    if (ref($options) ne 'HASH') {
+        croak 'Options must be given by a hashref'
+    }
+    my $ifs = $options->{'FS'};
+    my $ofs = exists $options->{'OFS'} ? $options->{'OFS'} : $ifs;
+    my @names;
+    my @orig_header_fields;
+    if (exists $options->{'names'}) {
+        @names = @{ $self->expand_names($options->{'names'}) };
+    }
+    elsif (exists $options->{'header'} and $options->{'header'}) {
+        my $row = <$source>;
+        chomp $row;
+        @names = split /(?:\Q$ifs\E)+/, $row;
+        @orig_header_fields = @names;
+    }
+    else {
+        croak 'No feature names specified for translate'
+    }
+    
+    my ($features, $widths) = $self->_init_translation(\@names, $options);
+    
+    # Translate the header, if there's one.
+    if (@orig_header_fields) {
+        my $globbin = $options->{'to_format'} eq 'binary';
+        my $last = pop @orig_header_fields;
+        for my $field (@orig_header_fields) {
+            my $nsep;
+            if (not exists $self->{'feat_named'}{ $field }) {
+                $nsep = 1;
+            }
+            else {
+                my $feature = $self->{'feat_named'}{ $field };
+                my $bin = (exists $feature->{'format'} and $feature->{'format'} eq 'binary' or $globbin);
+                $nsep = $bin ? _vector_length($feature) : 1;
+            }
+            print {$sink} $field, $ofs x $nsep;
+        }
+        print {$sink} $last, "\n";
+    }
+    
+    ROW:
+    while (defined (my $row = <$source>)) {
+        chomp $row;
+        my @values = split /$ifs/, $row;
+        undef $@;
+        my @translated = eval { $self->_translate_row(\@names, \@values, $features, $widths, $options) };
+        warn("$@ (line $.)"), next ROW if $@;
+        print {$sink} join($ofs, @translated), "\n";
+    }
 }
 
 {
