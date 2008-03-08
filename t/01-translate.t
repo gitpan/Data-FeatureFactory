@@ -3,7 +3,6 @@
 use strict;
 use warnings;
 use Test::More tests => 37;
-use List::MoreUtils;
 use Carp qw(verbose);
 use File::Temp;
 use File::Basename;
@@ -38,6 +37,14 @@ sub catchwarn {
             print STDERR $warning;
         }
     };
+}
+
+# This is copied from List/MoreUtils.pm
+sub zip {
+    my $max = -1;
+    $max < $#$_  &&  ($max = $#$_)  for @_;
+
+    map { my $ix = $_; map $_->[$ix], @_; } 0..$max;
 }
 
 {
@@ -170,11 +177,11 @@ for my $arg (@args) {
     print {$num_vals_fh}  join(' ', $exfeats->evaluate('-NOVALS', 'numeric', $arg)), "\n";
 }
 is($WARNINGS, 1, q{warned about converting valueless feature to numeric (3)});
-$norm_fh->seek(0,0);
-$num_fh ->seek(0,0);
-$bin_fh ->seek(0,0);
-$norm_vals_fh->seek(0,0);
-$num_vals_fh ->seek(0,0);
+seek($norm_fh, 0, 0);
+seek($num_fh,  0, 0);
+seek($bin_fh,  0, 0);
+seek($norm_vals_fh, 0, 0);
+seek($num_vals_fh,  0, 0);
 my $normal  = do { local $/; <$norm_fh> };
 my $numeric = do { local $/; <$num_fh>  };
 my $binary  = do { local $/; <$bin_fh>  };
@@ -182,121 +189,121 @@ my $normal_vals  = do { local $/; <$norm_vals_fh> };
 my $numeric_vals = do { local $/; <$num_vals_fh>  };
 
 my $norm2norm_fh = File::Temp->new;
-$norm_fh->seek(0,0);
+seek($norm_fh, 0, 0);
 $exfeats->translate($norm_fh, $norm2norm_fh, {from_format => 'normal', to_format => 'normal', FS => ' ', names => 'ALL'});
-$norm2norm_fh->seek(0,0);
+seek($norm2norm_fh, 0, 0);
 my $norm2norm = do { local $/; <$norm2norm_fh> };
 undef $norm2norm_fh;
 
 is($norm2norm, $normal, q{translating normal to normal});
 
 my $norm2num_fh = File::Temp->new;
-$norm_fh->seek(0,0);
+seek($norm_fh, 0, 0);
 $exfeats->translate($norm_fh, $norm2num_fh, {from_format => 'normal', to_format => 'numeric', FS => ' ', names => 'ALL'});
-$norm2num_fh->seek(0,0);
+seek($norm2num_fh, 0, 0);
 my $norm2num = do { local $/; <$norm2num_fh> };
 undef $norm2num_fh;
 
 is($norm2num, $numeric, q{translating normal to numeric});
 
 my $norm2bin_fh = File::Temp->new;
-$norm_vals_fh->seek(0,0);
+seek($norm_vals_fh, 0, 0);
 $exfeats->translate($norm_vals_fh, $norm2bin_fh, {from_format => 'normal', to_format => 'binary', FS => ' ', names => '-NOVALS'});
-$norm2bin_fh->seek(0,0);
+seek($norm2bin_fh, 0, 0);
 my $norm2bin = do { local $/; <$norm2bin_fh> };
 undef $norm2bin_fh;
 
 is($norm2bin, $binary, q{translating normal to binary});
 
 my $num2norm_fh = File::Temp->new;
-$num_fh->seek(0,0);
+seek($num_fh, 0, 0);
 $exfeats->translate($num_fh, $num2norm_fh, {from_format => 'numeric', to_format => 'normal', FS => ' ', names => 'ALL'});
-$num2norm_fh->seek(0,0);
+seek($num2norm_fh, 0, 0);
 my $num2norm = do { local $/; <$num2norm_fh> };
 undef $num2norm_fh;
 
 is($num2norm, $normal, q{translating numeric to normal});
 
 my $num2num_fh = File::Temp->new;
-$num_fh->seek(0,0);
+seek($num_fh, 0, 0);
 $exfeats->translate($num_fh, $num2num_fh, {from_format => 'numeric', to_format => 'numeric', FS => ' ', names => 'ALL'});
-$num2num_fh->seek(0,0);
+seek($num2num_fh, 0, 0);
 my $num2num = do { local $/; <$num2num_fh> };
 undef $num2num_fh;
 
 is($num2num, $numeric, q{translating numeric to numeric});
 
 my $num2bin_fh = File::Temp->new;
-$num_vals_fh->seek(0,0);
+seek($num_vals_fh, 0, 0);
 $exfeats->translate($num_vals_fh, $num2bin_fh, {from_format => 'numeric', to_format => 'binary', FS => ' ', names => '-NOVALS'});
-$num2bin_fh->seek(0,0);
+seek($num2bin_fh, 0, 0);
 my $num2bin = do { local $/; <$num2bin_fh> };
 undef $num2bin_fh;
 
 is($num2bin, $binary, q{translating numeric to binary});
 
 my $bin2norm_fh = File::Temp->new;
-$bin_fh->seek(0,0);
+seek($bin_fh, 0, 0);
 $exfeats->translate($bin_fh, $bin2norm_fh, {from_format => 'binary', to_format => 'normal', FS => ' ', names => '-NOVALS'});
-$bin2norm_fh->seek(0,0);
+seek($bin2norm_fh, 0, 0);
 my $bin2norm = do { local $/; <$bin2norm_fh> };
 undef $bin2norm_fh;
 
 is($bin2norm, $normal_vals, q{translating binary to normal});
 
 my $bin2num_fh = File::Temp->new;
-$bin_fh->seek(0,0);
+seek($bin_fh, 0, 0);
 $exfeats->translate($bin_fh, $bin2num_fh, {from_format => 'binary', to_format => 'numeric', FS => ' ', names => '-NOVALS'});
-$bin2num_fh->seek(0,0);
+seek($bin2num_fh, 0, 0);
 my $bin2num = do { local $/; <$bin2num_fh> };
 undef $bin2num_fh;
 
 is($bin2num, $numeric_vals, q{translating binary to numeric});
 
 my $bin2bin_fh = File::Temp->new;
-$bin_fh->seek(0,0);
+seek($bin_fh, 0, 0);
 $exfeats->translate($bin_fh, $bin2bin_fh, {from_format => 'binary', to_format => 'binary', FS => ' ', names => '-NOVALS'});
-$bin2bin_fh->seek(0,0);
+seek($bin2bin_fh, 0, 0);
 my $bin2bin = do { local $/; <$bin2bin_fh> };
 undef $bin2bin_fh;
 
 is($bin2bin, $binary, q{translating binary to binary});
 
 $norm2bin_fh = File::Temp->new;
-$norm_vals_fh->seek(0,0);
+seek($norm_vals_fh, 0, 0);
 $exfeats->translate($norm_vals_fh, $norm2bin_fh, {from_format => 'normal', to_format => 'binary', FS => ' ', names => '-NOVALS', to_NA => 'YY'});
-$norm2bin_fh->seek(0,0);
+seek($norm2bin_fh, 0, 0);
 $norm2bin = do { local $/; <$norm2bin_fh> };
 (my $expected = $binary) =~ s/\bXX\b/YY/g;
 
 is($norm2bin, $expected, q{translating with to_NA});
 
 $bin2num_fh = File::Temp->new;
-$norm2bin_fh->seek(0,0);
+seek($norm2bin_fh, 0, 0);
 $exfeats->translate($norm2bin_fh, $bin2num_fh, {
     from_format => 'binary', to_format => 'numeric', FS => ' ', names => '-NOVALS', from_NA => 'YY', to_NA => 'ZZ',
 });
 undef $norm2bin_fh;
-$bin2num_fh->seek(0,0);
+seek($bin2num_fh, 0, 0);
 $bin2num = do { local $/; <$bin2num_fh> };
 ($expected = $numeric_vals) =~ s/\bXX\b/ZZ/g;
 
 is($bin2num, $expected, q{translating with from_NA and to_NA});
 
 $num2norm_fh = File::Temp->new;
-$bin2num_fh->seek(0,0);
+seek($bin2num_fh, 0, 0);
 $exfeats->translate($bin2num_fh, $num2norm_fh, {from_format => 'numeric', to_format => 'normal', FS => ' ', names => '-NOVALS', from_NA => 'ZZ'});
 undef $bin2num_fh;
-$num2norm_fh->seek(0,0);
+seek($num2norm_fh, 0, 0);
 $num2norm = do { local $/; <$num2norm_fh> };
 undef $num2norm_fh;
 
 is($num2norm, $normal_vals, q{translating with from_NA});
 
 $norm2num_fh = File::Temp->new;
-$norm_fh->seek(0,0);
+seek($norm_fh, 0, 0);
 $exfeats->translate($norm_fh, $norm2num_fh, {from_format => 'normal', to_format => 'numeric', FS => ' ', OFS => "\t", names => 'ALL'});
-$norm2num_fh->seek(0,0);
+seek($norm2num_fh, 0, 0);
 $norm2num = do { local $/; <$norm2num_fh> };
 undef $norm2num_fh;
 ($expected = $numeric) =~ tr/ /\t/;
@@ -304,9 +311,9 @@ undef $norm2num_fh;
 is($norm2num, $expected, q{translating with OFS});
 
 $bin2norm_fh = File::Temp->new;
-$bin_fh->seek(0,0);
+seek($bin_fh, 0, 0);
 $exfeats->translate($bin_fh, $bin2norm_fh, {from_format => 'binary', to_format => 'normal', FS => ' ', OFS => ';', to_NA => '_', names => '-NOVALS'});
-$bin2norm_fh->seek(0,0);
+seek($bin2norm_fh, 0, 0);
 $bin2norm = do { local $/; <$bin2norm_fh> };
 undef $bin2norm_fh;
 ($expected = $normal_vals) =~ s/\bXX\b/_/g;
@@ -321,13 +328,13 @@ my $header = do {
     join(' ', @names)."\n"
 };
 print {$normhead_fh} $header;
-$norm_fh->seek(0,0);
+seek($norm_fh, 0, 0);
 print {$normhead_fh} <$norm_fh>;
-$normhead_fh->seek(0,0);
+seek($normhead_fh, 0, 0);
 $norm2num_fh = File::Temp->new;
 $exfeats->translate($normhead_fh, $norm2num_fh, {from_format => 'normal', to_format => 'numeric', FS => ' ', header => 1});
 undef $normhead_fh;
-$norm2num_fh->seek(0,0);
+seek($norm2num_fh, 0, 0);
 $norm2num = do { local $/; <$norm2num_fh> };
 undef $norm2num_fh;
 
@@ -344,7 +351,7 @@ my $i = 0;
 my @ballast_names = map { 'Ballast'.++$i } @names;
 my $header1norm = join(' ', "Ballast", @names) . "\n";
 my $header1bin  = 'Ballast first_digit' . ' 'x10 . 'capped letter1' . ' 'x27 . "letter2\n";
-my $headerNnorm = join(' ', List::MoreUtils::zip @names, @ballast_names) . "\n";
+my $headerNnorm = join(' ', zip \@names, \@ballast_names) . "\n";
 my $headerNbin  = 'first_digit' . ' 'x10 . 'Ballast1 capped Ballast2 letter1' . ' 'x27 . 'Ballast3 letter2' . ' 'x27 . "Ballast4\n";
 print {$norm_with_ballast1_fh} $header1norm;
 print {$num_with_ballast1_fh } $header1norm;
@@ -359,8 +366,8 @@ for my $arg (@args) {
     print {$norm_with_ballast1_fh} join(' ', "Ballast", @normvals), "\n";
     print {$num_with_ballast1_fh } join(' ', "Ballast", @numvals ), "\n";
     print {$bin_with_ballast1_fh } join(' ', "Ballast", @binvals ), "\n";
-    print {$norm_with_ballastN_fh} join(' ', List::MoreUtils::zip @normvals, @ballast_names), "\n";
-    print {$num_with_ballastN_fh } join(' ', List::MoreUtils::zip @numvals,  @ballast_names), "\n";
+    print {$norm_with_ballastN_fh} join(' ', zip \@normvals, \@ballast_names), "\n";
+    print {$num_with_ballastN_fh } join(' ', zip \@numvals,  \@ballast_names), "\n";
     my @binbalN;
     my @ballast_names = @ballast_names;
     for my $name (@names) {
@@ -376,7 +383,7 @@ for (
     $norm_with_ballast1_fh, $num_with_ballast1_fh, $bin_with_ballast1_fh,
     $norm_with_ballastN_fh, $num_with_ballastN_fh, $bin_with_ballastN_fh)
 {
-    $_->seek(0,0);
+    seek($_, 0, 0);
 }
 my $norm_with_ballast1 = do { local $/; <$norm_with_ballast1_fh> };
 my $num_with_ballast1  = do { local $/; <$num_with_ballast1_fh>  };
@@ -386,43 +393,43 @@ my $num_with_ballastN  = do { local $/; <$num_with_ballastN_fh>  };
 my $bin_with_ballastN  = do { local $/; <$bin_with_ballastN_fh>  };
 
 $norm2num_fh = File::Temp->new;
-$norm_with_ballast1_fh->seek(0,0);
+seek($norm_with_ballast1_fh, 0, 0);
 scalar <$norm_with_ballast1_fh>;
 $exfeats->translate($norm_with_ballast1_fh, $norm2num_fh, {from_format => 'normal', to_format => 'numeric', FS => ' ', names => [@names], ignore => 0});
 undef $norm_with_ballast1_fh;
-$norm2num_fh->seek(0,0);
+seek($norm2num_fh, 0, 0);
 $norm2num = do { local $/; <$norm2num_fh> };
 undef $norm2num_fh;
 
 is($header1norm.$norm2num, $num_with_ballast1, q{one column to ignore, no header});
 
 $num2bin_fh = File::Temp->new;
-$num_with_ballast1_fh->seek(0,0);
+seek($num_with_ballast1_fh, 0, 0);
 $exfeats->translate($num_with_ballast1_fh, $num2bin_fh, {from_format => 'numeric', to_format => 'binary', FS => ' ', header => 1, ignore => 0});
 undef $num_with_ballast1_fh;
-$num2bin_fh->seek(0,0);
+seek($num2bin_fh, 0, 0);
 $num2bin = do { local $/; <$num2bin_fh> };
 undef $num2bin_fh;
 
 is($num2bin, $bin_with_ballast1, q{one column to ignore, with header});
 
 $norm2bin_fh = File::Temp->new;
-$norm_with_ballastN_fh->seek(0,0);
+seek($norm_with_ballastN_fh, 0, 0);
 scalar <$norm_with_ballastN_fh>;
 $exfeats->translate($norm_with_ballastN_fh, $norm2bin_fh, {
     from_format => 'normal', to_format => 'binary', FS => ' ', names => [@names], ignore => [1, 3, 5]});
 undef $norm_with_ballastN_fh;
-$norm2bin_fh->seek(0,0);
+seek($norm2bin_fh, 0, 0);
 $norm2bin = do { local $/; <$norm2bin_fh> };
 undef $norm2bin_fh;
 
 is($headerNbin.$norm2bin, $bin_with_ballastN, q{many columns to ignore, no header});
 
 $bin2num_fh = File::Temp->new;
-$bin_with_ballastN_fh->seek(0,0);
+seek($bin_with_ballastN_fh, 0, 0);
 $exfeats->translate($bin_with_ballastN_fh, $bin2num_fh, {from_format => 'binary', to_format => 'numeric', FS => ' ', header => 1, ignore => [1,3,5,7]});
 undef $bin_with_ballastN_fh;
-$bin2num_fh->seek(0,0);
+seek($bin2num_fh, 0, 0);
 $bin2num = do { local $/; <$bin2num_fh> };
 undef $bin2num_fh;
 

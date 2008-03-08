@@ -3,7 +3,6 @@
 use strict;
 use warnings;
 no warnings 'once';
-use utf8;
 use Carp qw(verbose);
 use Test::More tests => 113;
 

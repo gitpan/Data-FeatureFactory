@@ -1,6 +1,14 @@
 Revision history for Data::FeatureFactory
 
-0.04
+0.04-r2 2008-03-08
+        Lifted requirements on test scripts so they don't place additional
+        dependencies for the distro (List::MoreUtils, File::Temp >= 0.17)
+
+0.04-r1 2008-03-06
+        Expanded the documentation,
+        fixed a memory leak caused by use of List::MoreUtils::each_array
+
+0.04    2008-03-05
         Added the variable $Data::FeatureFactory::CURRENT_FEATURE.
         Added conversions between formats.
         Corrected a bug preventing range to be applied to features with type

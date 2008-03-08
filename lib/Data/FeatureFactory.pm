@@ -112,7 +112,8 @@ its name. This option must not appear in combination with the C<values> option.
 Each value shall be on one line, with no headers, no intervening whitespace no
 comments and no empty lines.
 
-The file is expected to be encoded in UTF-8.
+The file is expected to be encoded in UTF-8 on perls supporting the C<:encoding>
+discipline for the C<open> function.
 
 =item range
 
@@ -411,7 +412,7 @@ use Carp;
 use File::Basename;
 use Scalar::Util;
 
-our $VERSION = '0.04-r1';
+our $VERSION = '0.04-r2';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
 my $OPEN_OPTIONS;
 our $CURRENT_FEATURE;
