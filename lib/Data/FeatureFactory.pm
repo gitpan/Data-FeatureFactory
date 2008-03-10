@@ -412,7 +412,7 @@ use Carp;
 use File::Basename;
 use Scalar::Util;
 
-our $VERSION = '0.04-r2';
+our $VERSION = '0.04-r3';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
 my $OPEN_OPTIONS;
 our $CURRENT_FEATURE;

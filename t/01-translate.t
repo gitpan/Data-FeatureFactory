@@ -147,7 +147,7 @@ is_deeply(\@norm2norm, ['XX', 2, 'XX'], q{translating row to norm with to_NA});
 @norm2num = $na->translate_row('ALL', [@norm2norm], {from_format => 'normal', to_format => 'numeric', from_NA => 'XX'});
 is_deeply(\@norm2num, \@normal, q{translating row to num with from_NA});
 @norm2bin = $na->translate_row('ALL', [@norm2norm], {from_format => 'normal', to_format => 'binary', from_NA => 'XX', to_NA => 'YY'});
-is_deeply(\@norm2bin, [qw(YY)x5, 0, 1, 0, 0, 0, 'YY'], q{translating row to binary with from_ and to_NA});
+is_deeply(\@norm2bin, [(('YY') x 5), 0, 1, 0, 0, 0, 'YY'], q{translating row to binary with from_ and to_NA});
 @bin2num = $na->translate_row('ALL', [@norm2bin], {from_format => 'binary', to_format => 'numeric', from_NA => 'YY'});
 is_deeply(\@bin2num, \@normal, q{translating row from binary with from_NA});
 
