@@ -659,7 +659,7 @@ is($foo.':'.$bar, 'foo:bar', q{features know their names});
 }
 
 my $numFormat = NumFormat->new;
-$expected_message = q{Unknown format: 'INVALID FORMAT'. Please specify 'normal', 'numeric' or 'binary'};
+$expected_message = q{Unknown format: 'INVALID FORMAT'. Please specify one of:};
 undef $@;
 eval { $numFormat->evaluate('num_letters', 'INVALID FORMAT', 'word') };
 is(substr($@, 0, length $expected_message), $expected_message, q{croaked with invalid format});

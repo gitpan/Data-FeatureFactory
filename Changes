@@ -1,6 +1,14 @@
 Revision history for Data::FeatureFactory
 
-0.01-r3 2008-03-10
+0.04_04 2008-05-31
+        Implemented some optimalizations:
+        - Caching of feature names expansions
+        - Factored out format checking from a regexp to a hash
+        Factored out adding a label to a feature to a subroutine.
+        Moved the documentation beyond the code.
+        Changed the minor version numbering from -rX to _XX.
+
+0.04-r3 2008-03-10
         t/01-translate.t:
         Replaced the "qw(YY)x5" construct which seemed to produce a syntax
         error on perl 5.6

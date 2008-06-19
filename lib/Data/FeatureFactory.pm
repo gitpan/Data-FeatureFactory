@@ -1,421 +1,15 @@
 package Data::FeatureFactory;
 
-=head1 NAME
-
-Data::FeatureFactory - evaluate features normally or numerically
-
-=head1 SYNOPSIS
-
- # in the module that defines features
- package MyFeatures;
- use base qw(Data::FeatureFactory);
- 
- our @features = (
-    { name => 'no_of_letters', type => 'int', range => '0 .. 5' },
-    { name => 'first_letter',  type => 'cat', 'values' => ['a' .. 'z'] },
- );
- 
- sub no_of_letters {
-    my ($word) = @_;
-    return length $word
- }
- 
- sub first_letter {
-    my ($word) = @_;
-    return substr $word, 0, 1
- }
-
- # in the main script
- package main;
- use MyFeatures;
- my $f = MyFeatures->new;
- 
- # evaluate all the features on all your data and format them numerically
- open FILEHANDLE, '>my_features.txt';
- print FILEHANDLE join(' ', $f->names), "\n";   # prepend a header
- for my $record (@data) {
-     my @values = $f->evaluate('ALL', 'numeric', $record);
-     print FILEHANDLE join(' ', @values);
- }
- close FILEHANDLE;
- 
- # specify the features to evaluate and gather the result in binary form
- my @vector = $f->evaluate([qw(no_of_letters first_letter)], 'binary', 'foo');
-
- # translate the once evaluated features to other formats
- open SOURCE, 'my_features.txt';
- open SINK,  '>my_features.csv';
- $f->translate(SOURCE, SINK, {
-    from_format => 'numeric', to_format => 'normal',
-    FS => ' ', OFS => ',',  # fields from space-separated to comma-separated
-    header => 1,    # the names of the features are in the first row of SOURCE
-    # names => 'ALL',    # header specified, so we don't need this    
-    from_NA => 0, to_NA => 'N/A'    # interpret zeroes as N/A's and substitute
- });
-
-=head1 DESCRIPTION
-
-Data::FeatureFactory automates evaluation of features of data samples and optionally
-encodes them as numbers or as binary vectors.
-
-=head2 Defining features
-
-The features are defined as subroutines in a package inheriting from Data::FeatureFactory.
-A subroutine is declared to be a feature by being mentioned in the package array
-C<@features>. Options for the features are also specified in this array. Its
-minimum structure is as follows:
-
- @features = (
-    { name => "name of feature 1" },
-    { name => "name of feature 2" },
-    ...
- )
-
-The elements of the array must be hashrefs and each of them must have a C<name>
-field. Other fields can specify options for the features. These are:
-
-=over 4
-
-=item type
-
-Specifies if the feature is C<categorial>, C<numeric>, C<integer> or
-C<boolean>.  Only the first three characters, case insensitive, are considered,
-so you can as well say C<cat>, C<Num>, C<integral> or C<Boo!>. The default type
-is categorial.
-
-Integer and numeric features will have values forced to numbers. Boolean ones
-will have values converted to 1/0 depending on Perl's notion of True/False. If
-you use warnings, you'll get one if your numeric feature returns a non-numeric
-string.
-
-=item values
-
-Lists the acceptable values for the feature to return. If a different value is
-returned by the subroutine, the whole feature vector is discarded.
-Alternatively, a default value can be specified. Whenever the order of the
-values matters, it is honored (as in transfer to numeric format). The values can
-be specified as an arrayref (in which case the order is regarded) or as a
-hashref, in which case the values are pseudo-randomly ordered, but the loading
-time is faster and transfer to numeric or binary format is faster as well. If
-the values are specified as a hashref, then keys of the hash shall contain the
-values of the feature and values of the hash should be 1's.
-
-=item default
-
-Specifies a default value to be substituted when the feature returns something
-not listed in C<values>.
-
-=item values_file
-
-The values can either be listed directly or in a file. This option specifies
-its name. This option must not appear in combination with the C<values> option.
-Each value shall be on one line, with no headers, no intervening whitespace no
-comments and no empty lines.
-
-The file is expected to be encoded in UTF-8 on perls supporting the C<:encoding>
-discipline for the C<open> function.
-
-=item range
-
-In case of integer and numeric features, an allowed range can be specified
-instead of the values. This option cannot appear together with the C<values> or
-C<values_file> option. The behavior is the same as with the C<values> option.
-The interval specified is closed, so returning the limit value is OK. The range
-shall be specified by two numeric expressions separated by two or more dots with
-optional surrounding whitespace - for example 2..5 or -0.5 ...... +1.000_005.
-The stuff around the dots are not checked to be valid numeric expressions. But
-you should get a warning if you use them when you supply something nonsensical.
-
-You can also specify a range for numeric (non-integer) features. The return
-value will be checked against it but unlike integer features, this will not
-generate a list of acceptible values. Therefore, range is not enough to specify
-for a numeric feature if you want to have it converted to binary. (though
-converting floating-point values to binary vectors seems rather quirky by
-itself)
-
-=item postproc
-
-This option defines a subroutine that is to be used as a filter for the
-feature's return value. It comes in handy when you, for example, have a feature
-returning UTF-8 encoded text and you need it to appear ASCII-encoded but you
-need to specify the acceptable values in UTF-8. As this use-case suggests, the
-postprocessing takes place after the value is checked against the list of
-acceptable values. The value for this option shall either be a coderef or the
-name of the preprocessing function. If the function is not available in the
-current namespace, Data::FeatureFactory will attempt to find it.
-
-The postprocessing only takes place when the feature is evaluated normally -
-that is, when its output is not being transformed to numeric or binary format.
-
-=item code
-
-Normally, the features are defined as subroutines in the package that inherits
-from Data::FeatureFactory. However, the definition can also be provided as a coderef
-in this option or in the C<%features> hash of the package. The priority is: 1)
-the C<code> option, 2) the C<%features> hash, and 3) the package subroutine.
-
-=item format
-
-Features can be output in different ways - see below. The format in which the
-features are evaluated is normally specified for all features in the call to
-C<evaluate>. You can override it for specific features with this option.
-
-You'll mostly use this to prevent the target (to-predict) feature from being
-numified or binarified: { name => 'target', format => 'normal' }.
-
-=item label
-
-The value of this field can either be a string or an arrayref specifying a list
-of labels for the feature. It's usable when you want to evaluate a group of
-features without having to list them.
-
-See the C<evaluate> method for details.
-
-=back
-
-=head3 Notice
-
-Both the feature and the optional postprocessing routine are evaluated
-in scalar context.
-
-When the N/A option is used, then C<undef> is treated specially but if N/A is
-not specified, then it is not. Assume you have a feature with values specified,
-a default value and the feature returns undef. Then if you use the N/A option,
-the N/A value is substituted, but if you don't use the N/A option, the default
-value is substituted instead (or it is left as an empty string if it's a valid
-value).
-
-The postprocessing subroutine, if specified, can be called several times during
-the construction of the object and within any methods. So it's highly advisable
-for postprocessing subroutines to have no side-effects.
-
-=head2 Creating the features object
-
-The C<new> method creates an
-object that can then be used to evaluate features. Please do *not* override the
-C<new> method. If you do, then be sure that it calls
-C<Data::FeatureFactory::new> properly. This method accepts an optional
-argument - a hashref with options. Currently, only the 'N/A' option is
-supported. See below for details.
-
-=head2 Getting the list of defined features
-
-The C<names> method returns a list of names of all the features defined.
-
-=head2 Evaluating features
-
-The C<evaluate> method of Data::FeatureFactory takes these
-arguments: 1) names of the features to evaluate, 2) the format in which they
-should be output and 3) arguments for the features themselves.
-
-The first argument can be an arrayref with the names of the features, or it can
-be a string. In case it's a string containing lowercase letters, then it's
-interpreted as the name of the only feature to evaluate.
-If all the letters in the string are UPPERCASE, then it's interpreted as a
-whitespace-separated list of labels. Each label can be prefixed by a C<-> sign
-or a C<+> sign. No prefix is the same as the C<+> prefix. The features evaluated
-are then those, who have at least one C<+>label but no C<->label. The presence
-of a negative label overrides the presence of a positive one in case of
-collisions. There is a special label C<ALL>, which you should never define for a
-feature and which will match any feature. It must not be used with the minus
-sign. Only specifying negative labels implies the C<ALL> label, so you can write
-C<-TARGET> to get all but the target features. The features are sorted by how
-they appear in the @features array - the order of labels has no effect
-whatsoever and no feature is added twice. C<ALL ALL ALL> is the same as just
-C<ALL>.
-Since labels can only be specified in upper case for the C<evaluate> method,
-they are matched case-insensitive.
-
-The second argument is C<normal>, C<numeric> or C<binary>. C<normal> means that
-the features' return values should be left alone (but postprocessed if such
-option is set). C<numeric> and C<binary> mean that the features' return values
-should be converted into numbers or binary vectors, as for support vector
-machines or neural networks to like them.
-
-The return value is the list of what the features returned. In case of binary,
-there can be a
-different (typically greater) number of elements in the returned list than there
-were features to evaluate.
-
-During evaluation, the features can access the
-C<$Data::FeatureFactory::CURRENT_FEATURE> variable, which holds the name of the
-feature evaluated.
-
-=head3 Transfer to numeric / binary form
-
-When you have the features output in numeric format, then integer and numeric
-features are left alone and categorial ones have a natural number (starting with
-1) assigned to every distinct value. If you use this feature, it is highly
-recommended to specify the values for the feature. If you don't then
-Data::FeatureFactory will attempt to create a mapping from the categories to numbers
-dynamically as then feature is evaluated. The mapping is being saved to a file
-whose name is C<.FeatureFactory.I<package_name>__I<feature_name>> and is located
-in the directory where Data::FeatureFactory resides if possible, or in your home
-directory or in /tmp - wherever the script can write. If none works, then you
-get a fatal error. The mapping is restored and extended upon subsequent runs
-with the same package and feature name, if read/write permissions don't change.
-
-Binary format is such that the return value is converted to a vector of all 0's
-and one 1. The positions in the vector represent the possible values of the
-feature and 1 is on the position that the feature actually has in that
-particular case. The values always need to be specified for this feature to work
-and it is highly recommended that they be specified with a fixed order (not by a
-hash), because else the order can change with different versions of perl and
-when you change the set of values for the feature. And when the order changes,
-then the meaning of the vectors change.
-
-=head2 N/A values
-
-You can specify a value to be substituted when a feature returns nothing (an
-undefined value). This is passed as an argument to the C<new> method.
-
- $f = MyFeatures->new({ 'N/A' => '_' }); # MyFeatures inherits from Data::FeatureFactory
- $v = $f->evaluate('feature1', 'normal', 'unexpected_argument');
-
-If C<feature1> returns an undefined value, then $v will contain the string '_'.
-When evaluating in binary format, a vector of the usual length is returned, with
-all values being the specified N/A. That is, if C<feature1> has 3 possible
-values, then
-
- @v = $f->evaluate('feature1', 'binary', 'unexpected_argument');
-
-will result in @v being C<('_', '_', '_')>. If C<feature1> returns undef, that
-is.
-
-N/A values don't get postprocessed in case a postprocessing function is
-specified.
-
-=head2 Conversion between formats
-
-Once you evaluate the features on a million observations and save it in a file,
-you might want to get the values in another format without having to evaluate
-the features all over again (which can be time consuming). This is where the
-method C<translate> comes in handy.
-
-C<translate> accepts three arguments: Source filehandle, destination filehandle
-and a hash with options (some of which aren't actually optional). The options
-are:
-
-=over 4
-
-=item from_format
-
-=item to_format
-
-C<normal>, C<numeric> or C<binary>.
-
-=item names
-
-The names of the features that are in the source file, in order. This can be
-anything that the C<evaluate> method accepts: An arrayref with the actual names
-of the features present, or a label expression (see L<Evaluating features>).
-
-=item header
-
-If the names of the features are in the first line of the source file, don't
-specify the C<names> option but set the C<header> option to a true value
-instead.
-
-The names of the features in the header shall be separated with the same string
-that separates the values on the following lines. There can be any number of
-separators between the feature names and Data::FeatureFactory will treat
-C<name1,name2> exactly the same as C<name1,,,name2> (assuming you use comma as
-separator). This only applies in the header and has a reason:
-
-When the header is in the source file, then it's translated to the output as
-well. And since in the binary format, the features span usually more than one
-column, Data::FeatureFactory::translate will put so many separators after each
-feature name as there are columns to its value. This is so you need not use the
-module to figure out how many digits each feature has. For example, if you have
-feature C<feat1> with three possible values, then its name in the header will be
-followed by three separators: C<feat1,,,feat2>.
-
-When reading the header, this is discarded because 1) You may want to write the
-header yourself or use one from a non-binary version and 2) Data::FeatureFactory
-has all information it needs in the @features array.
-
-=item FS
-
-The field separator that delimits the values in the files.
-
-=item OFS
-
-The output field separator: If you want the values separated with a different
-character / string in the destination file than in the source file, then this is
-the option to use.
-
-=item from_NA
-
-=item to_NA
-
-The value specified for C<from_NA> is interpreted as denoting the N/A values in
-the source file. These values will be converted to C<to_NA> in the destination
-file. If the C<Data::FeatureFactory> object has the N/A option specified, then
-that value is assumed for any of these two options implicitly.
-
-=back
-
-Required options are: from_format, to_format, FS and either names or header.
-
-Note that when translating a categorial feature without values specified to/from
-numeric format, then the dynamic mapping of values created by
-C<Data::FeatureFactory> must get resumed successfully. Otherwise you'll get an
-error about unexpected value as soon as the translation is attempted.
-
-=head3 Translating rows (not files)
-
-There's also a lower-level method available: C<translate_row>. Unlike the
-C<translate> method, it doesn't accept filehandles but accepts an arrayref with
-values and returns an array with the translated values. The arguments are:
-
-=over 4
-
-=item names
-
-This time a required argument, same as the C<names> option to C<translate>.
-
-=item values
-
-The arrayref of values to convert.
-
-=item options
-
-Same as with the C<translate> method, except the C<names> and C<header> options
-are not accepted.
-
-=back
-
-This method has the slight difference over C<translate> (beside only translating
-one row per call) that if the C<to_NA> option is specified but neither
-C<from_NA> option to the method nor the C<N/A> option to the object are
-specified, then undef's are interpreted as N/A values.
-
-=head2 Other low-level methods
-
-There are some other subroutines defined in C<Data::FeatureFactory>. One of
-those that might be of use to you is the C<expand_names> method, which you can
-give a label expression as an argument and it will give you the list of feature
-names that this label expression represents. For a description of how labels
-work, see L<Evaluating features>.
-
-=head1 COPYRIGHT
-
-Copyright (c) 2008 Oldrich Kruza. All rights reserved.
-
-This library is free software; you can redistribute it and/or modify it under
-the same terms as Perl itself.
-
-=cut
-
 use strict;
 use Carp;
 use File::Basename;
 use Scalar::Util;
 
-our $VERSION = '0.04-r3';
+our $VERSION = '0.04_04';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
 my $OPEN_OPTIONS;
 our $CURRENT_FEATURE;
+my %KNOWN_FORMATS = map {;$_=>1} qw/binary normal numeric/;
 
 # check if perl can open files in utf8
 {
@@ -745,6 +339,10 @@ sub new : method {
 
 sub expand_names : method {
     my ($self, $featnames) = @_;
+    if (not ref $featnames and exists $self->{expand_names_cache}{$featnames}) {
+        return $self->{expand_names_cache}{$featnames}
+    }
+    my $orig_featnames = $featnames;
     my @featkeys = @{ $self->{'featkeys'} };
     my %feat_named = %{ $self->{'feat_named'} };
     
@@ -778,26 +376,32 @@ sub expand_names : method {
         $featnames = ["$featnames"];
     }
     
+    if (not ref $orig_featnames) { $self->{expand_names_cache}{$orig_featnames} = $featnames }
     return $featnames
 }
 
 sub evaluate : method {
     my ($self, $featnames, $format, @args) = @_;
     my $class = ref $self;
-    my @featkeys = @{ $self->{'featkeys'} };
-    my %feat_named = %{ $self->{'feat_named'} };
     
     $featnames = $self->expand_names($featnames);
     my @feats;
-    for my $featname (@$featnames) {
-        if (not exists $feat_named{$featname}) {
-            croak "Feature '$featname' you wish to evaluate was not found among known features (these are: @featkeys)"
+    if (exists $self->{evaluate_featnames_cache}{"@$featnames"}) {
+        @feats = @{ $self->{evaluate_featnames_cache}{"@$featnames"} };
+    }
+    else {
+        my %feat_named = %{ $self->{feat_named} };
+        for my $featname (@$featnames) {
+            if (not exists $feat_named{$featname}) {
+                croak "Feature '$featname' you wish to evaluate was not found among known features (these are: @{$self->{featkeys}})"
+            }
+            push @feats, $feat_named{$featname};
         }
-        push @feats, $feat_named{$featname};
+        $self->{evaluate_featnames_cache}{"@$featnames"} = \@feats;
     }
     
-    if ($format !~ /^ (?: normal | numeric | binary ) $/x) {
-        croak "Unknown format: '$format'. Please specify 'normal', 'numeric' or 'binary'"
+    if (not exists $KNOWN_FORMATS{$format}) {
+        croak "Unknown format: '$format'. Please specify one of: @{[keys %KNOWN_FORMATS]}."
     }
     for my $feature (@feats) {
         $self->_create_mapping($feature, $format);
@@ -1427,6 +1031,22 @@ sub translate : method {
     }
 }
 
+sub add_label {
+    my ($feature, @labels) = @_;
+    @labels = map uc($_), @labels;
+    if (exists $feature->{'label'}) {
+        if (ref($feature->{'label'}) eq 'ARRAY') {
+            push @{ $feature->{'label'} }, @labels;
+        }
+        else {
+            $feature->{'label'} = [$feature->{'label'}, @labels];
+        }
+    }
+    else {
+        $feature->{'label'} = [@labels];
+    }
+}
+
 {
     package Data::FeatureFactory::SoftError;
     sub new {
@@ -1437,3 +1057,412 @@ sub translate : method {
 }
 
 1
+
+__END__
+
+=head1 NAME
+
+Data::FeatureFactory - evaluate features normally or numerically
+
+=head1 SYNOPSIS
+
+ # in the module that defines features
+ package MyFeatures;
+ use base qw(Data::FeatureFactory);
+ 
+ our @features = (
+    { name => 'no_of_letters', type => 'int', range => '0 .. 5' },
+    { name => 'first_letter',  type => 'cat', 'values' => ['a' .. 'z'] },
+ );
+ 
+ sub no_of_letters {
+    my ($word) = @_;
+    return length $word
+ }
+ 
+ sub first_letter {
+    my ($word) = @_;
+    return substr $word, 0, 1
+ }
+
+ # in the main script
+ package main;
+ use MyFeatures;
+ my $f = MyFeatures->new;
+ 
+ # evaluate all the features on all your data and format them numerically
+ open FILEHANDLE, '>my_features.txt';
+ print FILEHANDLE join(' ', $f->names), "\n";   # prepend a header
+ for my $record (@data) {
+     my @values = $f->evaluate('ALL', 'numeric', $record);
+     print FILEHANDLE join(' ', @values);
+ }
+ close FILEHANDLE;
+ 
+ # specify the features to evaluate and gather the result in binary form
+ my @vector = $f->evaluate([qw(no_of_letters first_letter)], 'binary', 'foo');
+
+ # translate the once evaluated features to other formats
+ open SOURCE, 'my_features.txt';
+ open SINK,  '>my_features.csv';
+ $f->translate(SOURCE, SINK, {
+    from_format => 'numeric', to_format => 'normal',
+    FS => ' ', OFS => ',',  # fields from space-separated to comma-separated
+    header => 1,    # the names of the features are in the first row of SOURCE
+    # names => 'ALL',    # header specified, so we don't need this    
+    from_NA => 0, to_NA => 'N/A'    # interpret zeroes as N/A's and substitute
+ });
+
+=head1 DESCRIPTION
+
+Data::FeatureFactory automates evaluation of features of data samples and optionally
+encodes them as numbers or as binary vectors.
+
+=head2 Defining features
+
+The features are defined as subroutines in a package inheriting from Data::FeatureFactory.
+A subroutine is declared to be a feature by being mentioned in the package array
+C<@features>. Options for the features are also specified in this array. Its
+minimum structure is as follows:
+
+ @features = (
+    { name => "name of feature 1" },
+    { name => "name of feature 2" },
+    ...
+ )
+
+The elements of the array must be hashrefs and each of them must have a C<name>
+field. Other fields can specify options for the features. These are:
+
+=over 4
+
+=item type
+
+Specifies if the feature is C<categorial>, C<numeric>, C<integer> or
+C<boolean>.  Only the first three characters, case insensitive, are considered,
+so you can as well say C<cat>, C<Num>, C<integral> or C<Boo!>. The default type
+is categorial.
+
+Integer and numeric features will have values forced to numbers. Boolean ones
+will have values converted to 1/0 depending on Perl's notion of True/False. If
+you use warnings, you'll get one if your numeric feature returns a non-numeric
+string.
+
+=item values
+
+Lists the acceptable values for the feature to return. If a different value is
+returned by the subroutine, the whole feature vector is discarded.
+Alternatively, a default value can be specified. Whenever the order of the
+values matters, it is honored (as in transfer to numeric format). The values can
+be specified as an arrayref (in which case the order is regarded) or as a
+hashref, in which case the values are pseudo-randomly ordered, but the loading
+time is faster and transfer to numeric or binary format is faster as well. If
+the values are specified as a hashref, then keys of the hash shall contain the
+values of the feature and values of the hash should be 1's.
+
+=item default
+
+Specifies a default value to be substituted when the feature returns something
+not listed in C<values>.
+
+=item values_file
+
+The values can either be listed directly or in a file. This option specifies
+its name. This option must not appear in combination with the C<values> option.
+Each value shall be on one line, with no headers, no intervening whitespace no
+comments and no empty lines.
+
+The file is expected to be encoded in UTF-8 on perls supporting the C<:encoding>
+discipline for the C<open> function.
+
+=item range
+
+In case of integer and numeric features, an allowed range can be specified
+instead of the values. This option cannot appear together with the C<values> or
+C<values_file> option. The behavior is the same as with the C<values> option.
+The interval specified is closed, so returning the limit value is OK. The range
+shall be specified by two numeric expressions separated by two or more dots with
+optional surrounding whitespace - for example 2..5 or -0.5 ...... +1.000_005.
+The stuff around the dots are not checked to be valid numeric expressions. But
+you should get a warning if you use them when you supply something nonsensical.
+
+You can also specify a range for numeric (non-integer) features. The return
+value will be checked against it but unlike integer features, this will not
+generate a list of acceptible values. Therefore, range is not enough to specify
+for a numeric feature if you want to have it converted to binary. (though
+converting floating-point values to binary vectors seems rather quirky by
+itself)
+
+=item postproc
+
+This option defines a subroutine that is to be used as a filter for the
+feature's return value. It comes in handy when you, for example, have a feature
+returning UTF-8 encoded text and you need it to appear ASCII-encoded but you
+need to specify the acceptable values in UTF-8. As this use-case suggests, the
+postprocessing takes place after the value is checked against the list of
+acceptable values. The value for this option shall either be a coderef or the
+name of the preprocessing function. If the function is not available in the
+current namespace, Data::FeatureFactory will attempt to find it.
+
+The postprocessing only takes place when the feature is evaluated normally -
+that is, when its output is not being transformed to numeric or binary format.
+
+=item code
+
+Normally, the features are defined as subroutines in the package that inherits
+from Data::FeatureFactory. However, the definition can also be provided as a coderef
+in this option or in the C<%features> hash of the package. The priority is: 1)
+the C<code> option, 2) the C<%features> hash, and 3) the package subroutine.
+
+=item format
+
+Features can be output in different ways - see below. The format in which the
+features are evaluated is normally specified for all features in the call to
+C<evaluate>. You can override it for specific features with this option.
+
+You'll mostly use this to prevent the target (to-predict) feature from being
+numified or binarified: { name => 'target', format => 'normal' }.
+
+=item label
+
+The value of this field can either be a string or an arrayref specifying a list
+of labels for the feature. It's usable when you want to evaluate a group of
+features without having to list them.
+
+See the C<evaluate> method for details.
+
+=back
+
+=head3 Notice
+
+Both the feature and the optional postprocessing routine are evaluated
+in scalar context.
+
+When the N/A option is used, then C<undef> is treated specially but if N/A is
+not specified, then it is not. Assume you have a feature with values specified,
+a default value and the feature returns undef. Then if you use the N/A option,
+the N/A value is substituted, but if you don't use the N/A option, the default
+value is substituted instead (or it is left as an empty string if it's a valid
+value).
+
+The postprocessing subroutine, if specified, can be called several times during
+the construction of the object and within any methods. So it's highly advisable
+for postprocessing subroutines to have no side-effects.
+
+=head2 Creating the features object
+
+The C<new> method creates an
+object that can then be used to evaluate features. Please do *not* override the
+C<new> method. If you do, then be sure that it calls
+C<Data::FeatureFactory::new> properly. This method accepts an optional
+argument - a hashref with options. Currently, only the 'N/A' option is
+supported. See below for details.
+
+=head2 Getting the list of defined features
+
+The C<names> method returns a list of names of all the features defined.
+
+=head2 Evaluating features
+
+The C<evaluate> method of Data::FeatureFactory takes these
+arguments: 1) names of the features to evaluate, 2) the format in which they
+should be output and 3) arguments for the features themselves.
+
+The first argument can be an arrayref with the names of the features, or it can
+be a string. In case it's a string containing lowercase letters, then it's
+interpreted as the name of the only feature to evaluate.
+If all the letters in the string are UPPERCASE, then it's interpreted as a
+whitespace-separated list of labels. Each label can be prefixed by a C<-> sign
+or a C<+> sign. No prefix is the same as the C<+> prefix. The features evaluated
+are then those, who have at least one C<+>label but no C<->label. The presence
+of a negative label overrides the presence of a positive one in case of
+collisions. There is a special label C<ALL>, which you should never define for a
+feature and which will match any feature. It must not be used with the minus
+sign. Only specifying negative labels implies the C<ALL> label, so you can write
+C<-TARGET> to get all but the target features. The features are sorted by how
+they appear in the @features array - the order of labels has no effect
+whatsoever and no feature is added twice. C<ALL ALL ALL> is the same as just
+C<ALL>.
+Since labels can only be specified in upper case for the C<evaluate> method,
+they are matched case-insensitive.
+
+The second argument is C<normal>, C<numeric> or C<binary>. C<normal> means that
+the features' return values should be left alone (but postprocessed if such
+option is set). C<numeric> and C<binary> mean that the features' return values
+should be converted into numbers or binary vectors, as for support vector
+machines or neural networks to like them.
+
+The return value is the list of what the features returned. In case of binary,
+there can be a
+different (typically greater) number of elements in the returned list than there
+were features to evaluate.
+
+During evaluation, the features can access the
+C<$Data::FeatureFactory::CURRENT_FEATURE> variable, which holds the name of the
+feature evaluated.
+
+=head3 Transfer to numeric / binary form
+
+When you have the features output in numeric format, then integer and numeric
+features are left alone and categorial ones have a natural number (starting with
+1) assigned to every distinct value. If you use this feature, it is highly
+recommended to specify the values for the feature. If you don't then
+Data::FeatureFactory will attempt to create a mapping from the categories to numbers
+dynamically as then feature is evaluated. The mapping is being saved to a file
+whose name is C<.FeatureFactory.I<package_name>__I<feature_name>> and is located
+in the directory where Data::FeatureFactory resides if possible, or in your home
+directory or in /tmp - wherever the script can write. If none works, then you
+get a fatal error. The mapping is restored and extended upon subsequent runs
+with the same package and feature name, if read/write permissions don't change.
+
+Binary format is such that the return value is converted to a vector of all 0's
+and one 1. The positions in the vector represent the possible values of the
+feature and 1 is on the position that the feature actually has in that
+particular case. The values always need to be specified for this feature to work
+and it is highly recommended that they be specified with a fixed order (not by a
+hash), because else the order can change with different versions of perl and
+when you change the set of values for the feature. And when the order changes,
+then the meaning of the vectors change.
+
+=head2 N/A values
+
+You can specify a value to be substituted when a feature returns nothing (an
+undefined value). This is passed as an argument to the C<new> method.
+
+ $f = MyFeatures->new({ 'N/A' => '_' }); # MyFeatures inherits from Data::FeatureFactory
+ $v = $f->evaluate('feature1', 'normal', 'unexpected_argument');
+
+If C<feature1> returns an undefined value, then $v will contain the string '_'.
+When evaluating in binary format, a vector of the usual length is returned, with
+all values being the specified N/A. That is, if C<feature1> has 3 possible
+values, then
+
+ @v = $f->evaluate('feature1', 'binary', 'unexpected_argument');
+
+will result in @v being C<('_', '_', '_')>. If C<feature1> returns undef, that
+is.
+
+N/A values don't get postprocessed in case a postprocessing function is
+specified.
+
+=head2 Conversion between formats
+
+Once you evaluate the features on a million observations and save it in a file,
+you might want to get the values in another format without having to evaluate
+the features all over again (which can be time consuming). This is where the
+method C<translate> comes in handy.
+
+C<translate> accepts three arguments: Source filehandle, destination filehandle
+and a hash with options (some of which aren't actually optional). The options
+are:
+
+=over 4
+
+=item from_format
+
+=item to_format
+
+C<normal>, C<numeric> or C<binary>.
+
+=item names
+
+The names of the features that are in the source file, in order. This can be
+anything that the C<evaluate> method accepts: An arrayref with the actual names
+of the features present, or a label expression (see L<Evaluating features>).
+
+=item header
+
+If the names of the features are in the first line of the source file, don't
+specify the C<names> option but set the C<header> option to a true value
+instead.
+
+The names of the features in the header shall be separated with the same string
+that separates the values on the following lines. There can be any number of
+separators between the feature names and Data::FeatureFactory will treat
+C<name1,name2> exactly the same as C<name1,,,name2> (assuming you use comma as
+separator). This only applies in the header and has a reason:
+
+When the header is in the source file, then it's translated to the output as
+well. And since in the binary format, the features span usually more than one
+column, Data::FeatureFactory::translate will put so many separators after each
+feature name as there are columns to its value. This is so you need not use the
+module to figure out how many digits each feature has. For example, if you have
+feature C<feat1> with three possible values, then its name in the header will be
+followed by three separators: C<feat1,,,feat2>.
+
+When reading the header, this is discarded because 1) You may want to write the
+header yourself or use one from a non-binary version and 2) Data::FeatureFactory
+has all information it needs in the @features array.
+
+=item FS
+
+The field separator that delimits the values in the files.
+
+=item OFS
+
+The output field separator: If you want the values separated with a different
+character / string in the destination file than in the source file, then this is
+the option to use.
+
+=item from_NA
+
+=item to_NA
+
+The value specified for C<from_NA> is interpreted as denoting the N/A values in
+the source file. These values will be converted to C<to_NA> in the destination
+file. If the C<Data::FeatureFactory> object has the N/A option specified, then
+that value is assumed for any of these two options implicitly.
+
+=back
+
+Required options are: from_format, to_format, FS and either names or header.
+
+Note that when translating a categorial feature without values specified to/from
+numeric format, then the dynamic mapping of values created by
+C<Data::FeatureFactory> must get resumed successfully. Otherwise you'll get an
+error about unexpected value as soon as the translation is attempted.
+
+=head3 Translating rows (not files)
+
+There's also a lower-level method available: C<translate_row>. Unlike the
+C<translate> method, it doesn't accept filehandles but accepts an arrayref with
+values and returns an array with the translated values. The arguments are:
+
+=over 4
+
+=item names
+
+This time a required argument, same as the C<names> option to C<translate>.
+
+=item values
+
+The arrayref of values to convert.
+
+=item options
+
+Same as with the C<translate> method, except the C<names> and C<header> options
+are not accepted.
+
+=back
+
+This method has the slight difference over C<translate> (beside only translating
+one row per call) that if the C<to_NA> option is specified but neither
+C<from_NA> option to the method nor the C<N/A> option to the object are
+specified, then undef's are interpreted as N/A values.
+
+=head2 Other low-level methods
+
+There are some other subroutines defined in C<Data::FeatureFactory>. One of
+those that might be of use to you is the C<expand_names> method, which you can
+give a label expression as an argument and it will give you the list of feature
+names that this label expression represents. For a description of how labels
+work, see L<Evaluating features>.
+
+=head1 COPYRIGHT
+
+Copyright (c) 2008 Oldrich Kruza. All rights reserved.
+
+This library is free software; you can redistribute it and/or modify it under
+the same terms as Perl itself.
+
+=cut
