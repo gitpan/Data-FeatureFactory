@@ -1,5 +1,8 @@
 Revision history for Data::FeatureFactory
 
+0.0404  2009-01-26
+        Removed the underscore from version to prevent CPAN from hiding the module.
+
 0.04_04 2008-05-31
         Implemented some optimalizations:
         - Caching of feature names expansions

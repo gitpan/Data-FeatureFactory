@@ -5,7 +5,7 @@ use Carp;
 use File::Basename;
 use Scalar::Util;
 
-our $VERSION = '0.04_04';
+our $VERSION = '0.0404';
 my $PATH = &{ sub { return dirname( (caller)[1] ) } };
 my $OPEN_OPTIONS;
 our $CURRENT_FEATURE;
